@@ -33,19 +33,22 @@ func main() {
 func run() error {
 	// CLI flags (primary interface for local use).
 	var (
-		tokenFlag  string
-		configFlag string
-		applyFlag  bool
+		tokenFlag   string
+		configFlag  string
+		applyFlag   bool
+		verboseFlag bool
 	)
 	flag.StringVar(&tokenFlag, "token", "", "GitHub PAT with project + repo scopes")
 	flag.StringVar(&configFlag, "config", ".github/project-label-sync.yml", "Path to config file")
 	flag.BoolVar(&applyFlag, "apply", false, "Apply changes (without this flag, only previews)")
+	flag.BoolVar(&verboseFlag, "verbose", false, "Log every per-issue action (default: summary only)")
 	flag.Parse()
 
 	// Fall back to GitHub Actions inputs if flags aren't set.
 	token := firstNonEmpty(tokenFlag, actionInput("TOKEN"), os.Getenv("GH_TOKEN"))
 	configPath := firstNonEmpty(configFlag, actionInput("CONFIG"))
 	apply := applyFlag || actionInput("APPLY") == "true"
+	verbose := verboseFlag || actionInput("VERBOSE") == "true"
 
 	if configPath == "" || configPath == ".github/project-label-sync.yml" {
 		// Check if the default exists; if not and a flag wasn't explicitly set, error clearly.
@@ -89,6 +92,7 @@ func run() error {
 	labels := gh.NewLabelManager(client.HTTPClient, token, !apply)
 	syncer := sync.NewSyncer(project, client, labels, cfg.Mapping, cfg.Field, !apply, projectOwner, projectNumber)
 	syncer.ProjectURL = cfg.ProjectURL
+	syncer.Verbose = verbose
 
 	return syncer.Run(ctx)
 }

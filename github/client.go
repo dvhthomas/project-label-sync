@@ -8,25 +8,15 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	applog "github.com/dvhthomas/project-label-sync/internal/log"
 )
 
-// DefaultMaxPoints is the default GraphQL point budget before aborting.
-const DefaultMaxPoints = 1000
-
 // Client wraps GitHub GraphQL API calls with retry and rate-limit handling.
 type Client struct {
 	Token      string
 	HTTPClient *http.Client
-	PointsUsed int // Track GraphQL points consumed
-	MaxPoints  int // Budget limit (default: DefaultMaxPoints)
-
-	mu             sync.Mutex
-	rateLimitRem   int // last observed x-ratelimit-remaining
-	rateLimitReset time.Time
 }
 
 // NewClient creates a Client with the given PAT.
@@ -34,15 +24,7 @@ func NewClient(token string) *Client {
 	return &Client{
 		Token:      token,
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
-		MaxPoints:  DefaultMaxPoints,
 	}
-}
-
-// RateLimitRemaining returns the last observed x-ratelimit-remaining value.
-func (c *Client) RateLimitRemaining() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.rateLimitRem
 }
 
 // graphqlRequest is the JSON body sent to the GraphQL endpoint.
@@ -62,19 +44,8 @@ type graphqlResponse struct {
 
 // GraphQL executes a GraphQL query/mutation and unmarshals the data field
 // into dest. It retries on transient failures with exponential backoff.
-// Each call increments PointsUsed; if the budget is exceeded, an error
-// is returned before making the request.
 func (c *Client) GraphQL(ctx context.Context, name string, query string, variables map[string]any, dest any) error {
 	return withRetry(ctx, name, 3, func() error {
-		// Check budget before each attempt.
-		c.mu.Lock()
-		if c.MaxPoints > 0 && c.PointsUsed >= c.MaxPoints {
-			c.mu.Unlock()
-			return fmt.Errorf("GraphQL point budget exhausted: %d/%d points used; aborting to avoid rate limiting", c.PointsUsed, c.MaxPoints)
-		}
-		c.PointsUsed++
-		c.mu.Unlock()
-
 		body, err := json.Marshal(graphqlRequest{Query: query, Variables: variables})
 		if err != nil {
 			return fmt.Errorf("marshal request: %w", err)
@@ -92,9 +63,6 @@ func (c *Client) GraphQL(ctx context.Context, name string, query string, variabl
 			return &retryableError{err: err}
 		}
 		defer resp.Body.Close()
-
-		// Track rate limit headers.
-		c.trackRateLimit(resp.Header)
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -139,23 +107,6 @@ func (c *Client) GraphQL(ctx context.Context, name string, query string, variabl
 		}
 		return nil
 	})
-}
-
-// trackRateLimit records the rate limit information from response headers.
-func (c *Client) trackRateLimit(h http.Header) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if rem := h.Get("X-Ratelimit-Remaining"); rem != "" {
-		if v, err := strconv.Atoi(rem); err == nil {
-			c.rateLimitRem = v
-		}
-	}
-	if reset := h.Get("X-Ratelimit-Reset"); reset != "" {
-		if v, err := strconv.ParseInt(reset, 10, 64); err == nil {
-			c.rateLimitReset = time.Unix(v, 0)
-		}
-	}
 }
 
 func parseRetryAfter(h http.Header) time.Duration {

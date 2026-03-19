@@ -15,6 +15,10 @@ inputs:
     description: 'Apply changes (create labels, sync issues). Without this, the Action only reports what would change.'
     required: false
     default: 'false'
+  verbose:
+    description: 'Log every per-issue action (default: summary only)'
+    required: false
+    default: 'false'
 runs:
   using: 'docker'
   image: 'Dockerfile'

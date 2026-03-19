@@ -82,8 +82,6 @@ func (c *Client) SearchOpenIssuesInProject(ctx context.Context, projectOwner str
 			}
 			defer httpResp.Body.Close()
 
-			c.trackRateLimit(httpResp.Header)
-
 			body, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return &retryableError{err: fmt.Errorf("read response: %w", err)}

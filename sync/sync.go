@@ -13,10 +13,6 @@ import (
 	applog "github.com/dvhthomas/project-label-sync/internal/log"
 )
 
-// MutationDelay is the pause between mutation API calls to avoid
-// triggering GitHub's secondary rate limits.
-const MutationDelay = 500 * time.Millisecond
-
 // Action describes a mutation that should (or would, in preview mode) be performed.
 type Action struct {
 	Type        ActionType
@@ -76,6 +72,7 @@ type Syncer struct {
 	AllMappedLabels []string            // flat list of all mapped labels
 	FieldName       string
 	DryRun          bool
+	Verbose         bool
 	ProjectOwner    string
 	ProjectNumber   int
 	ProjectURL      string
@@ -220,8 +217,6 @@ func (s *Syncer) Run(ctx context.Context) error {
 	// Pre-flight label check.
 	s.logLabelCheck(ctx, repos)
 
-	firstMut := true
-
 	// Track per-issue action types for summary counting.
 	issueAdds := make(map[int]bool)
 	issueRemoves := make(map[int]bool)
@@ -238,12 +233,6 @@ func (s *Syncer) Run(ctx context.Context) error {
 				}
 				continue
 			}
-
-			// Throttle between mutations to avoid secondary rate limits.
-			if !s.DryRun && !firstMut {
-				time.Sleep(MutationDelay)
-			}
-			firstMut = false
 
 			if execErr := s.Execute(ctx, item, a); execErr != nil {
 				s.Stats.Errors++
@@ -264,10 +253,6 @@ func (s *Syncer) Run(ctx context.Context) error {
 	s.Stats.LabelsAdded = len(issueAdds)
 	s.Stats.LabelsRemoved = len(issueRemoves)
 	s.Stats.BoardUpdated = len(issueBoards)
-
-	// Log API budget summary.
-	applog.Notice("API budget: %d GraphQL points used, %d remaining",
-		s.Client.PointsUsed, s.Client.RateLimitRemaining())
 
 	// Log final summary.
 	s.logSummary()
@@ -401,7 +386,9 @@ func (s *Syncer) boardWins(num int, repo string, item gh.ProjectItem, currentMap
 
 // Execute performs a single action.
 func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error {
-	applog.Info("[%s] %s#%d: %s", a.Type, a.Repo, a.IssueNumber, a.Detail)
+	if s.Verbose {
+		applog.Info("[%s] %s#%d: %s", a.Type, a.Repo, a.IssueNumber, a.Detail)
+	}
 
 	switch a.Type {
 	case ActionAddLabel:

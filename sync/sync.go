@@ -66,7 +66,8 @@ type SyncStats struct {
 type Syncer struct {
 	Project         *gh.ProjectInfo
 	Client          *gh.Client
-	Labels          *gh.LabelManager
+	Labels          LabelSyncer
+	Board           BoardUpdater
 	Mapping         map[string][]string // field value -> labels
 	ReverseMap      map[string]string   // label -> field value
 	AllMappedLabels []string            // flat list of all mapped labels
@@ -85,7 +86,7 @@ type Syncer struct {
 }
 
 // NewSyncer creates a Syncer from the given project info, clients, and mapping.
-func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManager, mapping map[string][]string, fieldName string, dryRun bool, projectOwner string, projectNumber int) *Syncer {
+func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels LabelSyncer, board BoardUpdater, mapping map[string][]string, fieldName string, dryRun bool, projectOwner string, projectNumber int) *Syncer {
 	opts := make(map[string]string, len(project.Options))
 	for _, o := range project.Options {
 		opts[o.Name] = o.ID
@@ -105,6 +106,7 @@ func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManag
 		Project:         project,
 		Client:          client,
 		Labels:          labels,
+		Board:           board,
 		Mapping:         mapping,
 		ReverseMap:      reverseMap,
 		AllMappedLabels: allLabels,
@@ -409,7 +411,7 @@ func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error 
 			applog.Preview("Would update board status to %q for item %s", a.StatusName, a.ItemID)
 			return nil
 		}
-		return s.Client.UpdateItemStatus(ctx, s.Project.ID, a.ItemID, s.Project.FieldID, optionID)
+		return s.Board.UpdateItemStatus(ctx, s.Project.ID, a.ItemID, s.Project.FieldID, optionID)
 
 	case ActionSkip, ActionNone:
 		return nil

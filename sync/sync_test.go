@@ -29,7 +29,7 @@ func TestReconcile(t *testing.T) {
 		"Done":        {"done"},
 	}
 
-	syncer := NewSyncer(project, nil, nil, mapping, "Status", false, "testowner", 1)
+	syncer := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	tests := []struct {
 		name       string
@@ -253,7 +253,7 @@ func TestReconcileMultiLabel(t *testing.T) {
 		"Done":        {"done"},
 	}
 
-	syncer := NewSyncer(project, nil, nil, mapping, "Status", false, "testowner", 1)
+	syncer := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	tests := []struct {
 		name       string

@@ -19,11 +19,20 @@ type LabelManager struct {
 	HTTPClient *http.Client
 	Token      string
 	DryRun     bool
+	baseURL    string // defaults to "https://api.github.com" if empty
 }
 
 // NewLabelManager creates a LabelManager using the given HTTP client and token.
 func NewLabelManager(httpClient *http.Client, token string, dryRun bool) *LabelManager {
-	return &LabelManager{HTTPClient: httpClient, Token: token, DryRun: dryRun}
+	return &LabelManager{HTTPClient: httpClient, Token: token, DryRun: dryRun, baseURL: "https://api.github.com"}
+}
+
+// apiBase returns the base URL for REST API calls.
+func (m *LabelManager) apiBase() string {
+	if m.baseURL != "" {
+		return m.baseURL
+	}
+	return "https://api.github.com"
 }
 
 // EnsureLabelExists creates the label if it does not already exist.
@@ -45,7 +54,7 @@ func (m *LabelManager) EnsureLabelExists(ctx context.Context, repo, labelName st
 			return fmt.Errorf("marshal label body: %w", err)
 		}
 
-		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/labels", repo)
+		apiURL := fmt.Sprintf("%s/repos/%s/labels", m.apiBase(), repo)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("create request: %w", err)
@@ -100,8 +109,8 @@ func (m *LabelManager) AddLabel(ctx context.Context, repo string, issueNumber in
 			return fmt.Errorf("marshal label body: %w", err)
 		}
 
-		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/issues/%s/labels",
-			repo, strconv.Itoa(issueNumber))
+		apiURL := fmt.Sprintf("%s/repos/%s/issues/%s/labels",
+			m.apiBase(), repo, strconv.Itoa(issueNumber))
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("create request: %w", err)
@@ -144,8 +153,8 @@ func (m *LabelManager) RemoveLabel(ctx context.Context, repo string, issueNumber
 		}
 
 		encodedLabel := url.PathEscape(labelName)
-		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/issues/%s/labels/%s",
-			repo, strconv.Itoa(issueNumber), encodedLabel)
+		apiURL := fmt.Sprintf("%s/repos/%s/issues/%s/labels/%s",
+			m.apiBase(), repo, strconv.Itoa(issueNumber), encodedLabel)
 		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, apiURL, nil)
 		if err != nil {
 			return fmt.Errorf("create request: %w", err)
@@ -187,7 +196,7 @@ func (m *LabelManager) CheckLabelsExist(ctx context.Context, repo string, labels
 	repoLabels := make(map[string]bool)
 	page := 1
 	for {
-		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/labels?per_page=100&page=%d", repo, page)
+		apiURL := fmt.Sprintf("%s/repos/%s/labels?per_page=100&page=%d", m.apiBase(), repo, page)
 		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 		if reqErr != nil {
 			return nil, nil, fmt.Errorf("create request: %w", reqErr)

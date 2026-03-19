@@ -70,6 +70,9 @@ func (c *Client) ResolveProject(ctx context.Context, projectURL string, fieldNam
 
 	var data map[string]json.RawMessage
 	if err := c.GraphQL(ctx, "resolve-project", query, vars, &data); err != nil {
+		if strings.Contains(err.Error(), "Could not resolve") && strings.Contains(err.Error(), fieldName) {
+			return nil, fmt.Errorf("project has no single-select field named %q\n\nCheck the field name in your project settings (field names are case-sensitive).\nThe default is \"Status\". Your config has: field: %s", fieldName, fieldName)
+		}
 		return nil, fmt.Errorf("resolve project: %w", err)
 	}
 

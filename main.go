@@ -89,7 +89,7 @@ func run() error {
 	applog.Notice("Project: %s (%d %s options: %s)",
 		project.Title, len(project.Options), cfg.Field, formatOptions(project.Options))
 
-	labels := gh.NewLabelManager(client.HTTPClient, token, !apply)
+	labels := gh.NewLabelManager(client.HTTPClient, token, !apply, verbose)
 	syncer := sync.NewSyncer(project, client, labels, client, cfg.Mapping, cfg.Field, !apply, projectOwner, projectNumber)
 	syncer.ProjectURL = cfg.ProjectURL
 	syncer.Verbose = verbose

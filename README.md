@@ -192,6 +192,41 @@ lifecycle:
   done: closed
 ```
 
+## Troubleshooting
+
+### Wrong field name
+
+```
+$ project-label-sync --config my-config.yml
+ERROR: resolve project: GraphQL error: Could not resolve to a ... with the name Priority
+```
+
+**Fix:** Check your `field:` value. The default is `Status`. Run without a mapping first to see the available fields.
+
+### Typo in status value
+
+```
+ERROR: mapping contains "In Progress" but the project's Status field has no such option
+ERROR: Available options: Long term, Mid term, Released, Short term
+ERROR: 3 mapping value(s) do not match any project field option — check spelling and capitalization
+```
+
+**Fix:** Copy the exact status names from the "Available options" line into your config. They are case-sensitive.
+
+### Non-standard status names
+
+Many projects don't use "Todo/In Progress/Done". Examples from real projects:
+
+- **GitHub Roadmap:** quarterly labels (`Q1 2026`, `Q2 2026`, `Future`)
+- **Kubernetes:** freeze tracking (`At risk for code freeze`, `Tracked for PRR freeze`)
+- **grafana/k6:** timeline-based (`Short term`, `Mid term`, `Long term`)
+
+**Tip:** Run the tool first with a dummy mapping to see what options your project actually has. The startup output shows all available options:
+
+```
+Project: my-project (4 Status options: Short term, Mid term, Long term, Released)
+```
+
 ## Limitations
 
 - Polling-based (cron schedule), not real-time

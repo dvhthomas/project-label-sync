@@ -458,7 +458,9 @@ func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error 
 			return fmt.Errorf("no board option found for status %q", a.StatusName)
 		}
 		if s.DryRun {
-			applog.Preview("Would update board status to %q for item %s", a.StatusName, a.ItemID)
+			if s.Verbose {
+				applog.Preview("Would update board status to %q for item %s", a.StatusName, a.ItemID)
+			}
 			return nil
 		}
 		return s.Board.UpdateItemStatus(ctx, s.Project.ID, a.ItemID, s.Project.FieldID, optionID)

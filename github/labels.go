@@ -19,12 +19,13 @@ type LabelManager struct {
 	HTTPClient *http.Client
 	Token      string
 	DryRun     bool
+	Verbose    bool
 	baseURL    string // defaults to "https://api.github.com" if empty
 }
 
 // NewLabelManager creates a LabelManager using the given HTTP client and token.
-func NewLabelManager(httpClient *http.Client, token string, dryRun bool) *LabelManager {
-	return &LabelManager{HTTPClient: httpClient, Token: token, DryRun: dryRun, baseURL: "https://api.github.com"}
+func NewLabelManager(httpClient *http.Client, token string, dryRun, verbose bool) *LabelManager {
+	return &LabelManager{HTTPClient: httpClient, Token: token, DryRun: dryRun, Verbose: verbose, baseURL: "https://api.github.com"}
 }
 
 // apiBase returns the base URL for REST API calls.
@@ -41,7 +42,9 @@ func (m *LabelManager) apiBase() string {
 func (m *LabelManager) EnsureLabelExists(ctx context.Context, repo, labelName string) error {
 	return withRetry(ctx, "ensure-label-"+labelName, 3, func() error {
 		if m.DryRun {
-			applog.Preview("Would ensure label %q exists on %s", labelName, repo)
+			if m.Verbose {
+				applog.Preview("Would ensure label %q exists on %s", labelName, repo)
+			}
 			return nil
 		}
 
@@ -98,7 +101,9 @@ func (m *LabelManager) EnsureLabelExists(ctx context.Context, repo, labelName st
 func (m *LabelManager) AddLabel(ctx context.Context, repo string, issueNumber int, labelName string) error {
 	return withRetry(ctx, "add-label-"+labelName, 3, func() error {
 		if m.DryRun {
-			applog.Preview("Would add label %q to %s#%d", labelName, repo, issueNumber)
+			if m.Verbose {
+				applog.Preview("Would add label %q to %s#%d", labelName, repo, issueNumber)
+			}
 			return nil
 		}
 
@@ -148,7 +153,9 @@ func (m *LabelManager) AddLabel(ctx context.Context, repo string, issueNumber in
 func (m *LabelManager) RemoveLabel(ctx context.Context, repo string, issueNumber int, labelName string) error {
 	return withRetry(ctx, "remove-label-"+labelName, 3, func() error {
 		if m.DryRun {
-			applog.Preview("Would remove label %q from %s#%d", labelName, repo, issueNumber)
+			if m.Verbose {
+				applog.Preview("Would remove label %q from %s#%d", labelName, repo, issueNumber)
+			}
 			return nil
 		}
 

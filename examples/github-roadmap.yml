@@ -1,0 +1,14 @@
+# Label sync for GitHub Public Roadmap
+# Board: https://github.com/orgs/github/projects/4247
+#
+# This project uses a "Release Phase" field instead of "Status",
+# and maps each phase to multiple existing labels.
+project-url: https://github.com/orgs/github/projects/4247
+field: Release Phase
+mapping:
+  "Public Preview":
+    - preview
+    - "Public Preview"
+  GA:
+    - ga
+    - shipped

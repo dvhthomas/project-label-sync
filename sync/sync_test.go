@@ -682,8 +682,8 @@ func TestReconcile_LabelsWithSpaces(t *testing.T) {
 	}
 
 	mapping := map[string][]string{
-		"In Progress": {"In Progress"},     // label has space, same as status
-		"Done":        {"Done & Shipped"},   // label has space and special char
+		"In Progress": {"In Progress"},    // label has space, same as status
+		"Done":        {"Done & Shipped"}, // label has space and special char
 	}
 
 	syncer, err := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "owner", 1)

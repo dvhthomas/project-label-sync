@@ -507,7 +507,7 @@ func TestValidateMapping_Typo(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for typo in mapping")
 	}
-	if !strings.Contains(err.Error(), "1 mapping value(s) do not match") {
+	if !strings.Contains(err.Error(), "1 invalid mapping value(s)") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
@@ -559,7 +559,7 @@ func TestValidateMapping_AllInvalid(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when all mapping values are invalid")
 	}
-	if !strings.Contains(err.Error(), "3 mapping value(s) do not match") {
+	if !strings.Contains(err.Error(), "3 invalid mapping value(s)") {
 		t.Errorf("expected 3 errors, got: %v", err)
 	}
 }
@@ -582,7 +582,7 @@ func TestValidateMapping_CaseSensitive(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for case mismatch")
 	}
-	if !strings.Contains(err.Error(), "1 mapping value(s) do not match") {
+	if !strings.Contains(err.Error(), "1 invalid mapping value(s)") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }

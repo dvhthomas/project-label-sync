@@ -18,6 +18,9 @@ type Config struct {
 func loadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("config file not found: %s\n\nCreate one with:\n\n  project-url: https://github.com/users/YOURNAME/projects/1\n  field: Status\n  mapping:\n    \"In Progress\":\n      - in-progress", path)
+		}
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 
@@ -27,13 +30,13 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	if cfg.ProjectURL == "" {
-		return nil, fmt.Errorf("config: project-url is required")
+		return nil, fmt.Errorf("config: project-url is required\n\nAdd to %s:\n\n  project-url: https://github.com/users/YOURNAME/projects/1", path)
 	}
 	if cfg.Field == "" {
 		cfg.Field = "Status"
 	}
 	if len(cfg.Mapping) == 0 {
-		return nil, fmt.Errorf("config: mapping is required (map field values to labels)")
+		return nil, fmt.Errorf("config: mapping is required\n\nAdd to %s:\n\n  mapping:\n    \"In Progress\":\n      - in-progress\n    Done:\n      - done", path)
 	}
 
 	return &cfg, nil

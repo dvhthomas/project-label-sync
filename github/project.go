@@ -106,10 +106,11 @@ func (c *Client) ResolveProject(ctx context.Context, projectURL string, fieldNam
 
 	p := ownerData.ProjectV2
 	if p.ID == "" {
-		return nil, fmt.Errorf("project not found at %s", projectURL)
+		return nil, fmt.Errorf("project not found: %s\n\nCheck that:\n  1. The URL is correct (copy it from your browser when viewing the project)\n  2. Your token has the 'project' scope\n  3. The project is accessible to the token owner", projectURL)
 	}
 	if p.Field.ID == "" {
-		return nil, fmt.Errorf("project %q has no %q single-select field", p.Title, fieldName)
+		//lint:ignore ST1005 user-facing error with fix suggestions
+		return nil, fmt.Errorf("project %q has no single-select field named %q\n\nCheck the field name in your project settings. The default is \"Status\".\nField names are case-sensitive.", p.Title, fieldName)
 	}
 
 	info := &ProjectInfo{
@@ -448,13 +449,16 @@ func parseProjectURL(rawURL string) (ownerType, login string, number int, err er
 			login = parts[i-1]
 			number, err = strconv.Atoi(parts[i+1])
 			if err != nil {
-				return "", "", 0, fmt.Errorf("invalid project number in URL %q: %w", rawURL, err)
+				//lint:ignore ST1005 user-facing error with fix suggestions
+				return "", "", 0, fmt.Errorf("invalid project URL: %s\n\nExpected format:\n  https://github.com/users/YOURNAME/projects/1\n  https://github.com/orgs/YOURORG/projects/1\n\nCopy the URL from your browser when viewing the project.", rawURL)
 			}
 			if ownerType != "users" && ownerType != "orgs" {
-				return "", "", 0, fmt.Errorf("unexpected owner type %q in URL %q (expected users or orgs)", ownerType, rawURL)
+				//lint:ignore ST1005 user-facing error with fix suggestions
+				return "", "", 0, fmt.Errorf("invalid project URL: %s\n\nExpected format:\n  https://github.com/users/YOURNAME/projects/1\n  https://github.com/orgs/YOURORG/projects/1\n\nCopy the URL from your browser when viewing the project.", rawURL)
 			}
 			return ownerType, login, number, nil
 		}
 	}
-	return "", "", 0, fmt.Errorf("cannot parse project URL %q: expected https://github.com/{users,orgs}/<login>/projects/<number>", rawURL)
+	//lint:ignore ST1005 user-facing error with fix suggestions
+	return "", "", 0, fmt.Errorf("invalid project URL: %s\n\nExpected format:\n  https://github.com/users/YOURNAME/projects/1\n  https://github.com/orgs/YOURORG/projects/1\n\nCopy the URL from your browser when viewing the project.", rawURL)
 }

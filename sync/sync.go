@@ -231,7 +231,8 @@ func (s *Syncer) validateMapping() error {
 			applog.Error("%s", e)
 		}
 		applog.Error("Available options: %s", strings.Join(optionNames, ", "))
-		return fmt.Errorf("%d mapping value(s) do not match any project field option — check spelling and capitalization", len(errs))
+		//lint:ignore ST1005 user-facing error with fix suggestions
+		return fmt.Errorf("config has %d invalid mapping value(s)\n\nThe mapping keys must exactly match your project's %s field options (case-sensitive).\nCopy the exact names from the 'Available options' list above into your config.", len(errs), s.FieldName)
 	}
 
 	return nil
@@ -455,7 +456,8 @@ func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error 
 	case ActionUpdateBoard:
 		optionID, ok := s.optionsByName[a.StatusName]
 		if !ok {
-			return fmt.Errorf("no board option found for status %q", a.StatusName)
+			//lint:ignore ST1005 user-facing error with fix suggestions
+			return fmt.Errorf("cannot update board: status %q is not a valid option for the %s field\n\nThis shouldn't happen — it may indicate the project was modified after the sync started.", a.StatusName, s.FieldName)
 		}
 		if s.DryRun {
 			if s.Verbose {

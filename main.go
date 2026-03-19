@@ -58,7 +58,7 @@ func run() error {
 	}
 
 	if token == "" {
-		return fmt.Errorf("token is required: pass --token or set GH_TOKEN")
+		return fmt.Errorf("token is required\n\nPass a classic PAT with 'project' and 'repo' scopes:\n  --token ghp_...\n  or set GH_TOKEN=ghp_...\n\nCreate one at: https://github.com/settings/tokens/new?scopes=project,repo&description=project-label-sync")
 	}
 
 	cfg, err := loadConfig(configPath)

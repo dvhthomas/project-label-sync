@@ -233,48 +233,252 @@ func TestFilterToMapped(t *testing.T) {
 
 func TestReconcileMultiLabel(t *testing.T) {
 	now := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
+	earlier := now.Add(-1 * time.Hour)
+	later := now.Add(1 * time.Hour)
 
 	project := &gh.ProjectInfo{
 		ID:      "PVT_test",
 		Title:   "Test Project",
 		FieldID: "PVTSSF_test",
 		Options: []gh.StatusOption{
-			{ID: "opt1", Name: "In Progress"},
+			{ID: "opt1", Name: "Todo"},
+			{ID: "opt2", Name: "In Progress"},
+			{ID: "opt3", Name: "Done"},
 		},
 	}
 
 	mapping := map[string][]string{
+		"Todo":        {"todo"},
 		"In Progress": {"in-progress", "active"},
+		"Done":        {"done"},
 	}
 
 	syncer := NewSyncer(project, nil, nil, mapping, "Status", false, "testowner", 1)
 
-	item := gh.ProjectItem{
-		ItemID:      "item1",
-		UpdatedAt:   now,
-		BoardStatus: "In Progress",
-		IssueNumber: 1,
-		IssueState:  "OPEN",
-		RepoOwner:   "owner",
-		RepoName:    "repo",
-		Labels:      []string{"bug"},
-		LabelEvents: map[string]time.Time{},
+	tests := []struct {
+		name       string
+		item       gh.ProjectItem
+		wantLen    int
+		wantType   []ActionType
+		wantLabels []string
+		wantStatus []string
+	}{
+		{
+			name: "multi-label: board wins, no current labels",
+			item: gh.ProjectItem{
+				ItemID:      "item1",
+				UpdatedAt:   now,
+				BoardStatus: "In Progress",
+				IssueNumber: 1,
+				IssueState:  "OPEN",
+				RepoOwner:   "owner",
+				RepoName:    "repo",
+				Labels:      []string{"bug"},
+				LabelEvents: map[string]time.Time{},
+			},
+			wantLen:    2,
+			wantType:   []ActionType{ActionAddLabel, ActionAddLabel},
+			wantLabels: []string{"in-progress", "active"},
+		},
+		{
+			name: "multi-label: in sync",
+			item: gh.ProjectItem{
+				ItemID:      "item2",
+				UpdatedAt:   now,
+				BoardStatus: "In Progress",
+				IssueNumber: 2,
+				IssueState:  "OPEN",
+				RepoOwner:   "owner",
+				RepoName:    "repo",
+				Labels:      []string{"in-progress", "active", "bug"},
+				LabelEvents: map[string]time.Time{
+					"in-progress": now,
+					"active":      now,
+				},
+			},
+			wantLen:  1,
+			wantType: []ActionType{ActionSkip},
+		},
+		{
+			name: "multi-label: partially in sync, board wins",
+			item: gh.ProjectItem{
+				ItemID:      "item3",
+				UpdatedAt:   now,
+				BoardStatus: "In Progress",
+				IssueNumber: 3,
+				IssueState:  "OPEN",
+				RepoOwner:   "owner",
+				RepoName:    "repo",
+				Labels:      []string{"in-progress", "bug"},
+				LabelEvents: map[string]time.Time{
+					"in-progress": earlier,
+				},
+			},
+			// Current mapped: [in-progress], expected: [in-progress, active]
+			// Not sameSet. inferStatus("in-progress") = "In Progress" (same as board).
+			// But labels don't fully match expected. Board is newer → board wins.
+			// Remove in-progress, add in-progress + active.
+			wantLen:    3,
+			wantType:   []ActionType{ActionRemoveLabel, ActionAddLabel, ActionAddLabel},
+			wantLabels: []string{"in-progress", "in-progress", "active"},
+		},
+		{
+			name: "multi-label: conflict, labels win",
+			item: gh.ProjectItem{
+				ItemID:      "item4",
+				UpdatedAt:   earlier,
+				BoardStatus: "Todo",
+				IssueNumber: 4,
+				IssueState:  "OPEN",
+				RepoOwner:   "owner",
+				RepoName:    "repo",
+				Labels:      []string{"in-progress", "active"},
+				LabelEvents: map[string]time.Time{
+					"in-progress": later,
+					"active":      now,
+				},
+			},
+			wantLen:    1,
+			wantType:   []ActionType{ActionUpdateBoard},
+			wantStatus: []string{"In Progress"},
+		},
+		{
+			name: "multi-label: conflict, board wins",
+			item: gh.ProjectItem{
+				ItemID:      "item5",
+				UpdatedAt:   later,
+				BoardStatus: "In Progress",
+				IssueNumber: 5,
+				IssueState:  "OPEN",
+				RepoOwner:   "owner",
+				RepoName:    "repo",
+				Labels:      []string{"todo"},
+				LabelEvents: map[string]time.Time{
+					"todo": earlier,
+				},
+			},
+			wantLen:    3, // remove todo, add in-progress, add active
+			wantType:   []ActionType{ActionRemoveLabel, ActionAddLabel, ActionAddLabel},
+			wantLabels: []string{"todo", "in-progress", "active"},
+		},
+		{
+			name: "labels from different statuses, board wins cleanup",
+			item: gh.ProjectItem{
+				ItemID:      "item6",
+				UpdatedAt:   now,
+				BoardStatus: "Todo",
+				IssueNumber: 6,
+				IssueState:  "OPEN",
+				RepoOwner:   "owner",
+				RepoName:    "repo",
+				Labels:      []string{"in-progress", "done"},
+				LabelEvents: map[string]time.Time{
+					"in-progress": later,
+					"done":        later,
+				},
+			},
+			wantLen:    3, // remove in-progress, remove done, add todo
+			wantType:   []ActionType{ActionRemoveLabel, ActionRemoveLabel, ActionAddLabel},
+			wantLabels: []string{"in-progress", "done", "todo"},
+		},
 	}
 
-	actions := syncer.Reconcile(item)
-	if len(actions) != 2 {
-		t.Fatalf("got %d actions, want 2", len(actions))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actions := syncer.Reconcile(tt.item)
+
+			if got := len(actions); got != tt.wantLen {
+				t.Errorf("got %d actions, want %d", got, tt.wantLen)
+				for i, a := range actions {
+					t.Logf("  action[%d]: %s label=%q status=%q - %s", i, a.Type, a.Label, a.StatusName, a.Detail)
+				}
+				return
+			}
+
+			for i, wantType := range tt.wantType {
+				if actions[i].Type != wantType {
+					t.Errorf("action[%d]: got type %s, want %s", i, actions[i].Type, wantType)
+				}
+			}
+
+			for i, wantLabel := range tt.wantLabels {
+				if wantLabel != "" && actions[i].Label != wantLabel {
+					t.Errorf("action[%d]: got Label %q, want %q", i, actions[i].Label, wantLabel)
+				}
+			}
+
+			for i, wantStatus := range tt.wantStatus {
+				if wantStatus != "" && actions[i].StatusName != wantStatus {
+					t.Errorf("action[%d]: got StatusName %q, want %q", i, actions[i].StatusName, wantStatus)
+				}
+			}
+		})
 	}
-	for _, a := range actions {
-		if a.Type != ActionAddLabel {
-			t.Errorf("expected ActionAddLabel, got %s", a.Type)
+}
+
+func TestSameSet(t *testing.T) {
+	tests := []struct {
+		a, b []string
+		want bool
+	}{
+		{nil, nil, true},
+		{[]string{"a"}, []string{"a"}, true},
+		{[]string{"a", "b"}, []string{"b", "a"}, true},
+		{[]string{"a"}, []string{"b"}, false},
+		{[]string{"a", "b"}, []string{"a"}, false},
+		{[]string{"a"}, []string{"a", "b"}, false},
+	}
+	for _, tt := range tests {
+		if got := sameSet(tt.a, tt.b); got != tt.want {
+			t.Errorf("sameSet(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
 		}
 	}
-	// Check both labels are added (order from mapping slice).
-	if actions[0].Label != "in-progress" {
-		t.Errorf("action[0]: got Label %q, want %q", actions[0].Label, "in-progress")
+}
+
+func TestInferStatus(t *testing.T) {
+	rm := map[string]string{
+		"in-progress": "In Progress",
+		"active":      "In Progress",
+		"todo":        "Todo",
+		"done":        "Done",
 	}
-	if actions[1].Label != "active" {
-		t.Errorf("action[1]: got Label %q, want %q", actions[1].Label, "active")
+	tests := []struct {
+		labels []string
+		want   string
+	}{
+		{nil, ""},
+		{[]string{"in-progress"}, "In Progress"},
+		{[]string{"in-progress", "active"}, "In Progress"},
+		{[]string{"in-progress", "done"}, ""},    // different statuses
+		{[]string{"unknown"}, ""},                // not in map
+		{[]string{"in-progress", "unknown"}, ""}, // partial unknown
+	}
+	for _, tt := range tests {
+		if got := inferStatus(tt.labels, rm); got != tt.want {
+			t.Errorf("inferStatus(%v) = %q, want %q", tt.labels, got, tt.want)
+		}
+	}
+}
+
+func TestLatestLabelTime(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	t3 := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+
+	events := map[string]time.Time{
+		"a": t1,
+		"b": t3,
+		"c": t2,
+	}
+
+	got := latestLabelTime([]string{"a", "b", "c"}, events)
+	if !got.Equal(t3) {
+		t.Errorf("got %v, want %v", got, t3)
+	}
+
+	// Labels not in events → zero time.
+	got = latestLabelTime([]string{"x"}, events)
+	if !got.IsZero() {
+		t.Errorf("got %v, want zero time", got)
 	}
 }

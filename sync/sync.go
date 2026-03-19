@@ -202,9 +202,8 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 
 	currentMappedLabels := filterToMapped(item.Labels, s.AllMappedLabels)
 
-	switch {
-	case len(currentMappedLabels) == 0:
-		// Board has status, issue has no mapped label -> board wins, add all expected labels.
+	// Case 1: No mapped labels on issue → board wins, add all expected.
+	if len(currentMappedLabels) == 0 {
 		var actions []Action
 		for _, lbl := range expectedLabels {
 			actions = append(actions, Action{
@@ -216,66 +215,49 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 			})
 		}
 		return actions
+	}
 
-	case len(currentMappedLabels) == 1 && len(expectedLabels) == 1:
-		current := currentMappedLabels[0]
-		expected := expectedLabels[0]
-		if current == expected {
-			return []Action{{
-				Type:        ActionSkip,
-				IssueNumber: num,
-				Repo:        repo,
-				Detail:      fmt.Sprintf("in sync: %q", current),
-			}}
-		}
+	// Case 2: Current labels exactly match expected → in sync.
+	if sameSet(currentMappedLabels, expectedLabels) {
+		return []Action{{
+			Type:        ActionSkip,
+			IssueNumber: num,
+			Repo:        repo,
+			Detail:      fmt.Sprintf("in sync: %v", expectedLabels),
+		}}
+	}
 
-		// Conflict: label says one thing, board says another.
-		labelTime := item.LabelEvents[current]
-		boardTime := item.UpdatedAt
+	// Case 3+4: Determine if current labels all belong to one status.
+	currentStatus := inferStatus(currentMappedLabels, s.ReverseMap)
 
-		if labelTime.After(boardTime) {
-			// Label is newer -> update board to match.
-			targetStatus, ok := s.ReverseMap[current]
-			if !ok {
-				// Label is mapped but not to a known field value; board wins.
-				return s.boardWins(num, repo, item, currentMappedLabels, expectedLabels)
-			}
-			return []Action{{
-				Type:        ActionUpdateBoard,
-				IssueNumber: num,
-				Repo:        repo,
-				ItemID:      item.ItemID,
-				StatusName:  targetStatus,
-				Detail: fmt.Sprintf(
-					"label %q (at %s) is newer than board %q (at %s); updating board to %q",
-					current, labelTime.Format("2006-01-02T15:04:05Z"),
-					item.BoardStatus, boardTime.Format("2006-01-02T15:04:05Z"),
-					targetStatus),
-			}}
-		}
-
-		// Board is newer -> update label to match.
-		return []Action{
-			{
-				Type:        ActionRemoveLabel,
-				IssueNumber: num,
-				Repo:        repo,
-				Label:       current,
-				Detail:      fmt.Sprintf("removing stale label %q (board is newer)", current),
-			},
-			{
-				Type:        ActionAddLabel,
-				IssueNumber: num,
-				Repo:        repo,
-				Label:       expected,
-				Detail:      fmt.Sprintf("adding label %q to match board status %q", expected, item.BoardStatus),
-			},
-		}
-
-	default:
-		// Multiple mapped labels or multi-label mapping mismatch -> clean up, board wins.
+	if currentStatus == "" {
+		// Labels span multiple statuses → cleanup, board wins.
 		return s.boardWins(num, repo, item, currentMappedLabels, expectedLabels)
 	}
+
+	// All current labels point to a single status that differs from the board.
+	// Resolve conflict via timestamps.
+	labelTime := latestLabelTime(currentMappedLabels, item.LabelEvents)
+	boardTime := item.UpdatedAt
+
+	if labelTime.After(boardTime) {
+		// Labels win → update board to match the label status.
+		return []Action{{
+			Type:        ActionUpdateBoard,
+			IssueNumber: num,
+			Repo:        repo,
+			ItemID:      item.ItemID,
+			StatusName:  currentStatus,
+			Detail: fmt.Sprintf(
+				"labels %v (at %s) are newer than board %q (at %s); updating board to %q",
+				currentMappedLabels, labelTime.Format("2006-01-02T15:04:05Z"),
+				item.BoardStatus, boardTime.Format("2006-01-02T15:04:05Z"),
+				currentStatus),
+		}}
+	}
+
+	// Board wins → remove current labels, add expected labels.
+	return s.boardWins(num, repo, item, currentMappedLabels, expectedLabels)
 }
 
 // boardWins removes all current mapped labels and adds the expected ones.
@@ -332,6 +314,56 @@ func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error 
 	}
 
 	return nil
+}
+
+// sameSet returns true if both slices contain the same elements (order-independent).
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	set := make(map[string]bool, len(a))
+	for _, v := range a {
+		set[v] = true
+	}
+	for _, v := range b {
+		if !set[v] {
+			return false
+		}
+	}
+	return true
+}
+
+// inferStatus returns the status name if all labels map to the same status
+// via the reverse map. Returns empty string if labels map to different statuses
+// or if any label is not found in the reverse map.
+func inferStatus(labels []string, reverseMap map[string]string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	status := ""
+	for _, l := range labels {
+		s, ok := reverseMap[l]
+		if !ok {
+			return ""
+		}
+		if status == "" {
+			status = s
+		} else if status != s {
+			return ""
+		}
+	}
+	return status
+}
+
+// latestLabelTime returns the most recent event time across the given labels.
+func latestLabelTime(labels []string, events map[string]time.Time) time.Time {
+	var latest time.Time
+	for _, l := range labels {
+		if t, ok := events[l]; ok && t.After(latest) {
+			latest = t
+		}
+	}
+	return latest
 }
 
 // filterToMapped returns labels that are present in the allMappedLabels list.

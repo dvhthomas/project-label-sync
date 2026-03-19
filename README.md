@@ -79,11 +79,15 @@ Add it as a repository secret named `PROJECT_PAT`.
 
 Before enabling automation, run a preview to see what the tool would do. No issues are modified, no labels are created.
 
+The easiest way is to add the workflow first (see step 5) **without** `apply: true`, then trigger it manually from the Actions tab. The Action defaults to preview mode — it shows what would change without touching anything.
+
+Or run it locally:
+
 ```sh
 # Install
 go install github.com/dvhthomas/project-label-sync@latest
 
-# Preview
+# Preview (GH_TOKEN also works)
 project-label-sync --token ghp_... --config project-label-sync.yml
 ```
 
@@ -123,17 +127,9 @@ The "Unmapped" section makes it easy to spot gaps — statuses with no label map
 
 Add `--verbose` to see the per-issue detail.
 
-### 4. Apply changes
+### 4. Add the GitHub Actions workflow
 
-When the preview looks right, add `--apply`:
-
-```sh
-project-label-sync --token ghp_... --config project-label-sync.yml --apply
-```
-
-### 5. Automate with GitHub Actions
-
-Add a workflow to run the sync on a schedule:
+Add a workflow to your repo. Start **without** `apply` to preview:
 
 ```yaml
 # .github/workflows/label-sync.yml
@@ -141,7 +137,7 @@ name: Sync Project Labels
 on:
   schedule:
     - cron: '*/15 * * * *'   # every 15 minutes
-  workflow_dispatch:          # manual trigger for testing
+  workflow_dispatch:          # manual trigger from the Actions tab
 
 jobs:
   sync:
@@ -151,10 +147,26 @@ jobs:
       - uses: dvhthomas/project-label-sync@v0.1.2
         with:
           token: ${{ secrets.PROJECT_PAT }}
+```
+
+Commit this, then go to the Actions tab and click "Run workflow." Check the log output — it shows exactly what would change. The `actions/checkout` step is required so the config file is available.
+
+### 5. Enable apply
+
+When the preview looks right, add `apply: true` to the workflow:
+
+```yaml
+      - uses: dvhthomas/project-label-sync@v0.1.2
+        with:
+          token: ${{ secrets.PROJECT_PAT }}
           apply: true
 ```
 
-The `actions/checkout` step is required so the config file is available.
+Or from the CLI:
+
+```sh
+project-label-sync --token ghp_... --config project-label-sync.yml --apply
+```
 
 ## How conflicts are resolved
 

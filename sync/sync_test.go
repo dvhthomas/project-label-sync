@@ -23,7 +23,7 @@ func TestReconcile(t *testing.T) {
 		},
 	}
 
-	syncer := NewSyncer(project, nil, nil, "status:", false)
+	syncer := NewSyncer(project, nil, nil, "status:", false, "testowner", 1)
 
 	tests := []struct {
 		name       string

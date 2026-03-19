@@ -55,18 +55,20 @@ func (a ActionType) String() string {
 
 // Syncer holds the configuration and dependencies needed for reconciliation.
 type Syncer struct {
-	Project     *gh.ProjectInfo
-	Client      *gh.Client
-	Labels      *gh.LabelManager
-	LabelPrefix string
-	DryRun      bool
+	Project       *gh.ProjectInfo
+	Client        *gh.Client
+	Labels        *gh.LabelManager
+	LabelPrefix   string
+	DryRun        bool
+	ProjectOwner  string
+	ProjectNumber int
 
 	// optionsByName maps status name -> option ID for board mutations.
 	optionsByName map[string]string
 }
 
 // NewSyncer creates a Syncer from the given project info and clients.
-func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManager, prefix string, dryRun bool) *Syncer {
+func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManager, prefix string, dryRun bool, projectOwner string, projectNumber int) *Syncer {
 	opts := make(map[string]string, len(project.Options))
 	for _, o := range project.Options {
 		opts[o.Name] = o.ID
@@ -77,13 +79,16 @@ func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManag
 		Labels:        labels,
 		LabelPrefix:   prefix,
 		DryRun:        dryRun,
+		ProjectOwner:  projectOwner,
+		ProjectNumber: projectNumber,
 		optionsByName: opts,
 	}
 }
 
-// Run fetches all project items and reconciles each one.
+// Run fetches all project items via the Search API + batch GraphQL enrichment,
+// then reconciles each one.
 func (s *Syncer) Run(ctx context.Context) error {
-	items, err := s.Client.FetchProjectItems(ctx, s.Project.ID, s.LabelPrefix)
+	items, err := s.Client.FetchSyncData(ctx, s.Project.ID, s.ProjectOwner, s.ProjectNumber, s.LabelPrefix)
 	if err != nil {
 		return err
 	}

@@ -45,6 +45,12 @@ func run() error {
 		log.Println("::notice::Running in LIVE mode. Mutations will be applied.")
 	}
 
+	// Parse project URL to extract owner and number for search queries.
+	_, projectOwner, projectNumber, err := gh.ParseProjectURL(projectURL)
+	if err != nil {
+		return fmt.Errorf("parse project URL: %w", err)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -60,7 +66,7 @@ func run() error {
 
 	// Run sync.
 	labels := gh.NewLabelManager(client.HTTPClient, token, dryRun)
-	syncer := sync.NewSyncer(project, client, labels, labelPrefix, dryRun)
+	syncer := sync.NewSyncer(project, client, labels, labelPrefix, dryRun, projectOwner, projectNumber)
 
 	return syncer.Run(ctx)
 }

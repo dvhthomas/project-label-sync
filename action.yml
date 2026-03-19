@@ -1,0 +1,23 @@
+name: 'Project Label Sync'
+description: 'Bidirectional sync between GitHub Projects v2 status fields and issue labels'
+branding:
+  icon: 'refresh-cw'
+  color: 'blue'
+inputs:
+  project-url:
+    description: 'GitHub Projects v2 URL (e.g., https://github.com/users/yourname/projects/1)'
+    required: true
+  token:
+    description: 'Classic PAT with project + repo scopes (GITHUB_TOKEN cannot access projects)'
+    required: true
+  label-prefix:
+    description: 'Prefix for status labels'
+    required: false
+    default: 'status:'
+  dry-run:
+    description: 'Log what would change without making mutations'
+    required: false
+    default: 'true'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'

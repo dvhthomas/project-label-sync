@@ -239,6 +239,52 @@ func TestCheckLabelsExist(t *testing.T) {
 	}
 }
 
+func TestAddLabel_WithSpace(t *testing.T) {
+	var gotBody map[string][]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/repos/owner/repo/issues/42/labels") {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("[]"))
+	}))
+	defer srv.Close()
+
+	lm := newTestLabelManager(srv, false)
+	err := lm.AddLabel(context.Background(), "owner/repo", 42, "in progress")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	labels := gotBody["labels"]
+	if len(labels) != 1 || labels[0] != "in progress" {
+		t.Errorf("labels = %v, want [in progress]", labels)
+	}
+}
+
+func TestRemoveLabel_WithSpace(t *testing.T) {
+	var gotRawURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRawURL = r.RequestURI
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	lm := newTestLabelManager(srv, false)
+	err := lm.RemoveLabel(context.Background(), "owner/repo", 42, "in progress")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(gotRawURL, "in%20progress") {
+		t.Errorf("request URI = %q, want to contain 'in%%20progress'", gotRawURL)
+	}
+}
+
 // newTestLabelManager creates a LabelManager pointed at the test server.
 // It replaces the base URL by using a custom transport.
 func newTestLabelManager(srv *httptest.Server, dryRun bool) *LabelManager {

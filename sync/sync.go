@@ -192,11 +192,61 @@ func (s *Syncer) logSummary() {
 	)
 }
 
+// validateMapping checks that every key in the mapping corresponds to an actual
+// option on the project's status field. It also warns about unmapped options.
+// On failure the error message includes the list of valid options so the user
+// can fix their config.
+func (s *Syncer) validateMapping() error {
+	validOptions := make(map[string]bool, len(s.Project.Options))
+	var optionNames []string
+	for _, opt := range s.Project.Options {
+		validOptions[opt.Name] = true
+		optionNames = append(optionNames, opt.Name)
+	}
+	sort.Strings(optionNames)
+
+	var warnings []string
+	var errs []string
+
+	for configValue := range s.Mapping {
+		if !validOptions[configValue] {
+			errs = append(errs, fmt.Sprintf("mapping contains %q but the project's %s field has no such option", configValue, s.FieldName))
+		}
+	}
+
+	// Warn about unmapped options (informational, not an error).
+	for _, opt := range s.Project.Options {
+		if _, mapped := s.Mapping[opt.Name]; !mapped {
+			warnings = append(warnings, fmt.Sprintf("project status %q is not mapped (will be ignored)", opt.Name))
+		}
+	}
+
+	for _, w := range warnings {
+		applog.Warn("%s", w)
+	}
+
+	if len(errs) > 0 {
+		sort.Strings(errs)
+		for _, e := range errs {
+			applog.Error("%s", e)
+		}
+		applog.Error("Available options: %s", strings.Join(optionNames, ", "))
+		return fmt.Errorf("%d mapping value(s) do not match any project field option — check spelling and capitalization", len(errs))
+	}
+
+	return nil
+}
+
 // Run fetches all project items via the Search API + batch GraphQL enrichment,
 // then reconciles each one.
 func (s *Syncer) Run(ctx context.Context) error {
 	// Log configuration summary.
 	s.logConfigSummary()
+
+	// Validate mapping against actual project field options before doing any work.
+	if err := s.validateMapping(); err != nil {
+		return err
+	}
 
 	items, err := s.Client.FetchSyncData(ctx, s.Project.ID, s.ProjectOwner, s.ProjectNumber, s.FieldName, s.AllMappedLabels)
 	if err != nil {

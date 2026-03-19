@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -457,6 +458,132 @@ func TestInferStatus(t *testing.T) {
 		if got := inferStatus(tt.labels, rm); got != tt.want {
 			t.Errorf("inferStatus(%v) = %q, want %q", tt.labels, got, tt.want)
 		}
+	}
+}
+
+func TestValidateMapping_AllValid(t *testing.T) {
+	project := &gh.ProjectInfo{
+		ID:      "PVT_test",
+		Title:   "Test Project",
+		FieldID: "PVTSSF_test",
+		Options: []gh.StatusOption{
+			{ID: "opt1", Name: "Todo"},
+			{ID: "opt2", Name: "In Progress"},
+			{ID: "opt3", Name: "Done"},
+		},
+	}
+	mapping := map[string][]string{
+		"Todo":        {"todo"},
+		"In Progress": {"in-progress"},
+		"Done":        {"done"},
+	}
+	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+
+	if err := s.validateMapping(); err != nil {
+		t.Fatalf("expected no error for valid mapping, got: %v", err)
+	}
+}
+
+func TestValidateMapping_Typo(t *testing.T) {
+	project := &gh.ProjectInfo{
+		ID:      "PVT_test",
+		Title:   "Test Project",
+		FieldID: "PVTSSF_test",
+		Options: []gh.StatusOption{
+			{ID: "opt1", Name: "Backlog"},
+			{ID: "opt2", Name: "Ready"},
+			{ID: "opt3", Name: "In Progress"},
+			{ID: "opt4", Name: "In Review"},
+			{ID: "opt5", Name: "Done"},
+		},
+	}
+	mapping := map[string][]string{
+		"In Progres": {"in-progress"}, // typo!
+		"Done":       {"done"},
+	}
+	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+
+	err := s.validateMapping()
+	if err == nil {
+		t.Fatal("expected error for typo in mapping")
+	}
+	if !strings.Contains(err.Error(), "1 mapping value(s) do not match") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestValidateMapping_UnmappedOption(t *testing.T) {
+	project := &gh.ProjectInfo{
+		ID:      "PVT_test",
+		Title:   "Test Project",
+		FieldID: "PVTSSF_test",
+		Options: []gh.StatusOption{
+			{ID: "opt1", Name: "Backlog"},
+			{ID: "opt2", Name: "In Progress"},
+			{ID: "opt3", Name: "Done"},
+		},
+	}
+	// Only map two of the three options; "Backlog" is unmapped.
+	mapping := map[string][]string{
+		"In Progress": {"in-progress"},
+		"Done":        {"done"},
+	}
+	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+
+	// Unmapped options produce warnings, not errors.
+	if err := s.validateMapping(); err != nil {
+		t.Fatalf("unmapped options should warn, not error; got: %v", err)
+	}
+}
+
+func TestValidateMapping_AllInvalid(t *testing.T) {
+	project := &gh.ProjectInfo{
+		ID:      "PVT_test",
+		Title:   "Test Project",
+		FieldID: "PVTSSF_test",
+		Options: []gh.StatusOption{
+			{ID: "opt1", Name: "Todo"},
+			{ID: "opt2", Name: "In Progress"},
+			{ID: "opt3", Name: "Done"},
+		},
+	}
+	// Every mapping key is wrong.
+	mapping := map[string][]string{
+		"To Do":      {"todo"},
+		"In Progres": {"in-progress"},
+		"Dne":        {"done"},
+	}
+	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+
+	err := s.validateMapping()
+	if err == nil {
+		t.Fatal("expected error when all mapping values are invalid")
+	}
+	if !strings.Contains(err.Error(), "3 mapping value(s) do not match") {
+		t.Errorf("expected 3 errors, got: %v", err)
+	}
+}
+
+func TestValidateMapping_CaseSensitive(t *testing.T) {
+	project := &gh.ProjectInfo{
+		ID:      "PVT_test",
+		Title:   "Test Project",
+		FieldID: "PVTSSF_test",
+		Options: []gh.StatusOption{
+			{ID: "opt1", Name: "In Progress"},
+		},
+	}
+	mapping := map[string][]string{
+		"in progress": {"in-progress"}, // wrong case
+	}
+	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+
+	err := s.validateMapping()
+	if err == nil {
+		t.Fatal("expected error for case mismatch")
+	}
+	if !strings.Contains(err.Error(), "1 mapping value(s) do not match") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 

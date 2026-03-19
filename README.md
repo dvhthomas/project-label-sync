@@ -23,39 +23,7 @@ mapping:
 ### Preview what would change
 
 ```sh
-go run . --token ghp_... --config examples/dvhthomas-gh-velocity.yml
-```
-
-```
-Preview mode — showing what would change. Use --apply to update issues.
-Project: gh-velocity (3 Status options: In progress, In review, Done)
-Configuration:
-  Project: gh-velocity (https://github.com/users/dvhthomas/projects/1)
-  Field: Status
-  Mappings:
-    "Done" → [done]
-    "In progress" → [in-progress]
-    "In review" → [in-review]
-  Mode: Preview (no changes made — use --apply to update issues)
-Label check on dvhthomas/gh-velocity:
-  ✓ done (exists)
-  ✓ in-progress (exists)
-  ✓ in-review (exists)
-Summary:
-  Issues scanned: 0
-  Already in sync: 0
-  Would add labels: 0 issues
-  Would remove labels: 0 issues
-  Would update board: 0 issues
-  Labels to create: 0
-  Skipped (unmapped/closed): 0
-  Errors: 0
-```
-
-### Preview against a larger project
-
-```sh
-go run . --token ghp_... --config examples/microsoft-ebpf-for-windows.yml
+project-label-sync --token ghp_... --config examples/microsoft-ebpf-for-windows.yml
 ```
 
 ```
@@ -202,31 +170,6 @@ Conflicts are resolved by most-recent-write-wins. If a label was added more rece
 Requires a classic PAT with `project` and `repo` scopes. `GITHUB_TOKEN` cannot access project data. Fine-grained PATs do not support the Projects v2 GraphQL API.
 
 Store it as a repository secret (e.g., `PROJECT_PAT`).
-
-## Pairing with gh-velocity
-
-This Action complements [gh-velocity](https://github.com/dvhthomas/gh-velocity), which uses issue labels as lifecycle signals for cycle-time metrics. The mapping in your sync config should match your gh-velocity `lifecycle` config:
-
-**project-label-sync** config:
-
-```yaml
-mapping:
-  "In progress":
-    - in-progress
-  "In review":
-    - in-review
-  Done:
-    - done
-```
-
-**gh-velocity** config:
-
-```yaml
-lifecycle:
-  in-progress: active
-  in-review: active
-  done: closed
-```
 
 ## Troubleshooting
 

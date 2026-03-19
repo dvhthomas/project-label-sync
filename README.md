@@ -1,16 +1,26 @@
 # Project Label Sync
 
-Keep your GitHub issue labels in sync with your GitHub Projects board — automatically.
+Bridge GitHub Projects and GitHub Labels — automatically.
 
 ## The problem
 
-You manage work on a GitHub Projects board. You drag issues to "In Progress" and "Done." But labels don't update to match, so any tool, workflow, or search that relies on labels is out of date. Updating labels by hand is tedious and easy to forget.
+GitHub has two systems for tracking issue state, and they don't talk to each other.
+
+**GitHub Projects** is where many teams manage work. You drag issues between columns like "In Progress" and "Done." It's visual, flexible, and built for planning.
+
+**GitHub Labels** are where everything else reads state. Search queries, GitHub Actions triggers, CI workflows, external tools, metrics dashboards, and the GitHub API all filter by labels. Labels are portable, queryable, and universally understood.
+
+If your team manages work on a project board, nothing outside that board knows about it. An issue sitting in "In Progress" on the board has no label to show for it. You can't search for in-progress issues, trigger a workflow when work starts, or feed a metrics tool that reads labels. The board is a silo.
+
+Updating labels by hand every time you move a card is tedious, error-prone, and the first thing people stop doing.
 
 ## What this does
 
-This tool reads your project board and your issue labels, compares them, and reconciles the difference. If you move an issue to "In Progress" on the board, the `in-progress` label appears on the issue. If someone adds a label directly, the board updates to match.
+This tool watches your project board and your issue labels, and keeps them in sync. Move an issue to "In Progress" on the board and the `in-progress` label appears. Add a label directly and the board updates to match.
 
-It runs on a schedule (every 15 minutes, or whatever you choose) via GitHub Actions, or locally from the command line. It never writes anything unless you explicitly pass `--apply`.
+You define the mapping between board status values and labels in a config file. The tool handles the rest — creating missing labels, resolving conflicts by timestamp, and skipping statuses you don't care about.
+
+It runs on a schedule via GitHub Actions, or locally from the command line. It never writes anything unless you explicitly pass `--apply`.
 
 ## Setup
 

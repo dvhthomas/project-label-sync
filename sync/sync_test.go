@@ -30,7 +30,7 @@ func TestReconcile(t *testing.T) {
 		"Done":        {"done"},
 	}
 
-	syncer := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+	syncer, _ := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	tests := []struct {
 		name       string
@@ -254,7 +254,7 @@ func TestReconcileMultiLabel(t *testing.T) {
 		"Done":        {"done"},
 	}
 
-	syncer := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+	syncer, _ := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	tests := []struct {
 		name       string
@@ -477,7 +477,7 @@ func TestValidateMapping_AllValid(t *testing.T) {
 		"In Progress": {"in-progress"},
 		"Done":        {"done"},
 	}
-	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+	s, _ := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	if err := s.validateMapping(); err != nil {
 		t.Fatalf("expected no error for valid mapping, got: %v", err)
@@ -501,7 +501,7 @@ func TestValidateMapping_Typo(t *testing.T) {
 		"In Progres": {"in-progress"}, // typo!
 		"Done":       {"done"},
 	}
-	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+	s, _ := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	err := s.validateMapping()
 	if err == nil {
@@ -528,7 +528,7 @@ func TestValidateMapping_UnmappedOption(t *testing.T) {
 		"In Progress": {"in-progress"},
 		"Done":        {"done"},
 	}
-	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+	s, _ := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	// Unmapped options produce warnings, not errors.
 	if err := s.validateMapping(); err != nil {
@@ -553,7 +553,7 @@ func TestValidateMapping_AllInvalid(t *testing.T) {
 		"In Progres": {"in-progress"},
 		"Dne":        {"done"},
 	}
-	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+	s, _ := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	err := s.validateMapping()
 	if err == nil {
@@ -576,7 +576,7 @@ func TestValidateMapping_CaseSensitive(t *testing.T) {
 	mapping := map[string][]string{
 		"in progress": {"in-progress"}, // wrong case
 	}
-	s := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+	s, _ := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	err := s.validateMapping()
 	if err == nil {
@@ -587,11 +587,7 @@ func TestValidateMapping_CaseSensitive(t *testing.T) {
 	}
 }
 
-func TestManyToOneMapping(t *testing.T) {
-	now := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
-	earlier := now.Add(-1 * time.Hour)
-	later := now.Add(1 * time.Hour)
-
+func TestNewSyncer_RejectsDuplicateLabels(t *testing.T) {
 	project := &gh.ProjectInfo{
 		ID:      "PVT_test",
 		Title:   "Test Project",
@@ -599,101 +595,52 @@ func TestManyToOneMapping(t *testing.T) {
 		Options: []gh.StatusOption{
 			{ID: "opt1", Name: "Ready"},
 			{ID: "opt2", Name: "In Progress"},
-			{ID: "opt3", Name: "In Review"},
-			{ID: "opt4", Name: "Done"},
+			{ID: "opt3", Name: "Done"},
 		},
 	}
 
-	// "Ready" and "In Progress" both map to "in-progress" — many-to-one.
-	mapping := map[string][]string{
-		"Ready":       {"in-progress"},
-		"In Progress": {"in-progress"},
-		"In Review":   {"in-review"},
-		"Done":        {"done"},
-	}
-
-	syncer := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
-
-	t.Run("AllMappedLabels has no duplicates", func(t *testing.T) {
-		seen := make(map[string]bool)
-		for _, l := range syncer.AllMappedLabels {
-			if seen[l] {
-				t.Errorf("duplicate label in AllMappedLabels: %q", l)
-			}
-			seen[l] = true
+	t.Run("same label for two statuses is rejected", func(t *testing.T) {
+		mapping := map[string][]string{
+			"Ready":       {"in-progress"},
+			"In Progress": {"in-progress"}, // duplicate!
+			"Done":        {"done"},
+		}
+		_, err := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "owner", 1)
+		if err == nil {
+			t.Fatal("expected error for duplicate label across statuses, got nil")
+		}
+		if !strings.Contains(err.Error(), "in-progress") {
+			t.Errorf("error should mention the duplicate label, got: %s", err)
+		}
+		if !strings.Contains(err.Error(), "same label cannot be used") {
+			t.Errorf("error should explain the problem, got: %s", err)
 		}
 	})
 
-	t.Run("ambiguous label detected", func(t *testing.T) {
-		if len(syncer.AmbiguousLabels) == 0 {
-			t.Fatal("expected AmbiguousLabels to be non-empty")
+	t.Run("unique labels are accepted", func(t *testing.T) {
+		mapping := map[string][]string{
+			"Ready":       {"ready"},
+			"In Progress": {"in-progress"},
+			"Done":        {"done"},
 		}
-		found := false
-		for _, l := range syncer.AmbiguousLabels {
-			if l == "in-progress" {
-				found = true
-			}
+		syncer, err := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "owner", 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
-		if !found {
-			t.Errorf("expected 'in-progress' in AmbiguousLabels, got %v", syncer.AmbiguousLabels)
-		}
-	})
-
-	t.Run("ambiguous label skips board update", func(t *testing.T) {
-		// Issue has "in-progress" label (ambiguous), board says "Done".
-		// Label is newer, so normally it would update board to match the label's status.
-		// But since "in-progress" is ambiguous (maps to both Ready and In Progress),
-		// we don't know which status to set, so we skip.
-		item := gh.ProjectItem{
-			ItemID:      "item1",
-			UpdatedAt:   earlier,
-			BoardStatus: "Done",
-			IssueNumber: 1,
-			IssueState:  "OPEN",
-			RepoOwner:   "owner",
-			RepoName:    "repo",
-			Labels:      []string{"in-progress"},
-			LabelEvents: map[string]time.Time{
-				"in-progress": later,
-			},
-		}
-		actions := syncer.Reconcile(item)
-		if len(actions) != 1 {
-			t.Fatalf("got %d actions, want 1; actions: %v", len(actions), actions)
-		}
-		if actions[0].Type != ActionSkip {
-			t.Errorf("got action type %s, want skip; detail: %s", actions[0].Type, actions[0].Detail)
-		}
-		if !strings.Contains(actions[0].Detail, "maps to multiple statuses") {
-			t.Errorf("unexpected detail: %s", actions[0].Detail)
+		if syncer == nil {
+			t.Fatal("expected syncer, got nil")
 		}
 	})
 
-	t.Run("non-ambiguous label still updates board", func(t *testing.T) {
-		// Issue has "in-review" label (only "In Review" maps to it), board says "Ready".
-		// Label is newer → should update board normally.
-		item := gh.ProjectItem{
-			ItemID:      "item2",
-			UpdatedAt:   earlier,
-			BoardStatus: "Ready",
-			IssueNumber: 2,
-			IssueState:  "OPEN",
-			RepoOwner:   "owner",
-			RepoName:    "repo",
-			Labels:      []string{"in-review"},
-			LabelEvents: map[string]time.Time{
-				"in-review": later,
-			},
+	t.Run("same label in same status is fine", func(t *testing.T) {
+		// This shouldn't happen in practice but isn't a conflict
+		mapping := map[string][]string{
+			"In Progress": {"in-progress", "active"},
+			"Done":        {"done"},
 		}
-		actions := syncer.Reconcile(item)
-		if len(actions) != 1 {
-			t.Fatalf("got %d actions, want 1", len(actions))
-		}
-		if actions[0].Type != ActionUpdateBoard {
-			t.Errorf("got action type %s, want update-board", actions[0].Type)
-		}
-		if actions[0].StatusName != "In Review" {
-			t.Errorf("got status %q, want %q", actions[0].StatusName, "In Review")
+		_, err := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "owner", 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 }

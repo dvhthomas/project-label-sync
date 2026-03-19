@@ -71,7 +71,6 @@ type Syncer struct {
 	Mapping         map[string][]string // field value -> labels
 	ReverseMap      map[string]string   // label -> field value
 	AllMappedLabels []string            // flat list of all mapped labels (unique)
-	AmbiguousLabels []string            // labels that map to multiple statuses
 	FieldName       string
 	DryRun          bool
 	Verbose         bool
@@ -87,7 +86,7 @@ type Syncer struct {
 }
 
 // NewSyncer creates a Syncer from the given project info, clients, and mapping.
-func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels LabelSyncer, board BoardUpdater, mapping map[string][]string, fieldName string, dryRun bool, projectOwner string, projectNumber int) *Syncer {
+func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels LabelSyncer, board BoardUpdater, mapping map[string][]string, fieldName string, dryRun bool, projectOwner string, projectNumber int) (*Syncer, error) {
 	opts := make(map[string]string, len(project.Options))
 	for _, o := range project.Options {
 		opts[o.Name] = o.ID
@@ -110,7 +109,20 @@ func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels LabelSyncer, b
 	sort.Strings(ambiguousLabels)
 
 	if len(ambiguousLabels) > 0 {
-		applog.Warn("label(s) %v map to multiple statuses — label→board sync disabled for these (board→label still works)", ambiguousLabels)
+		// Build a helpful message showing which labels conflict.
+		var details []string
+		for _, l := range ambiguousLabels {
+			var statuses []string
+			for fieldValue, lbls := range mapping {
+				for _, ml := range lbls {
+					if ml == l {
+						statuses = append(statuses, fmt.Sprintf("%q", fieldValue))
+					}
+				}
+			}
+			details = append(details, fmt.Sprintf("  %q is used by statuses: %s", l, strings.Join(statuses, ", ")))
+		}
+		return nil, fmt.Errorf("config error: the same label cannot be used for multiple statuses\n\n%s\n\neach status must map to unique labels so the sync can distinguish them", strings.Join(details, "\n"))
 	}
 
 	return &Syncer{
@@ -121,13 +133,12 @@ func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels LabelSyncer, b
 		Mapping:         mapping,
 		ReverseMap:      reverseMap,
 		AllMappedLabels: allLabels,
-		AmbiguousLabels: ambiguousLabels,
 		FieldName:       fieldName,
 		DryRun:          dryRun,
 		ProjectOwner:    projectOwner,
 		ProjectNumber:   projectNumber,
 		optionsByName:   opts,
-	}
+	}, nil
 }
 
 // logConfigSummary prints the configuration overview at the start of a run.
@@ -407,17 +418,6 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 
 	if labelTime.After(boardTime) {
 		// Labels win → update board to match the label status.
-		// But if any current label is ambiguous, skip the board update.
-		for _, l := range currentMappedLabels {
-			if contains(s.AmbiguousLabels, l) {
-				return []Action{{
-					Type:        ActionSkip,
-					IssueNumber: num,
-					Repo:        repo,
-					Detail:      fmt.Sprintf("label %q maps to multiple statuses; skipping board update (board→label sync still works)", l),
-				}}
-			}
-		}
 		return []Action{{
 			Type:        ActionUpdateBoard,
 			IssueNumber: num,
@@ -573,14 +573,4 @@ func uniqueStrings(s []string) []string {
 		}
 	}
 	return result
-}
-
-// contains reports whether s contains v.
-func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }

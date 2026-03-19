@@ -84,6 +84,7 @@ func (m *mockBoard) UpdateItemStatus(_ context.Context, projectID, itemID, field
 
 // helper to build a test Syncer with mocks.
 func testSyncer(labels LabelSyncer, board BoardUpdater, dryRun bool) *Syncer {
+	// Test helper — panics on error (all test mappings are valid).
 	project := &gh.ProjectInfo{
 		ID:      "PVT_test",
 		Title:   "Test Project",
@@ -99,7 +100,11 @@ func testSyncer(labels LabelSyncer, board BoardUpdater, dryRun bool) *Syncer {
 		"In Progress": {"in-progress"},
 		"Done":        {"done"},
 	}
-	return NewSyncer(project, nil, labels, board, mapping, "Status", dryRun, "testowner", 1)
+	s, err := NewSyncer(project, nil, labels, board, mapping, "Status", dryRun, "testowner", 1)
+	if err != nil {
+		panic(err)
+	}
+	return s
 }
 
 func dummyItem() gh.ProjectItem {

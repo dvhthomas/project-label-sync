@@ -12,6 +12,10 @@ import (
 	gh "github.com/dvhthomas/project-label-sync/github"
 )
 
+// MutationDelay is the pause between mutation API calls to avoid
+// triggering GitHub's secondary rate limits.
+const MutationDelay = 500 * time.Millisecond
+
 // Action describes a mutation that should (or would, in dry-run) be performed.
 type Action struct {
 	Type        ActionType
@@ -85,9 +89,12 @@ func (s *Syncer) Run(ctx context.Context) error {
 	}
 
 	var (
-		synced  int
-		skipped int
-		errors  int
+		synced       int
+		skipped      int
+		errors       int
+		labelChanges int
+		boardUpdates int
+		firstMut     = true
 	)
 
 	for _, item := range items {
@@ -97,16 +104,36 @@ func (s *Syncer) Run(ctx context.Context) error {
 				skipped++
 				continue
 			}
+
+			// Throttle between mutations to avoid secondary rate limits.
+			if !s.DryRun && !firstMut {
+				time.Sleep(MutationDelay)
+			}
+			firstMut = false
+
 			synced++
 			if err := s.Execute(ctx, item, a); err != nil {
 				errors++
 				log.Printf("::error::Failed to execute %s on %s#%d: %v", a.Type, a.Repo, a.IssueNumber, err)
+			} else {
+				switch a.Type {
+				case ActionAddLabel, ActionRemoveLabel:
+					labelChanges++
+				case ActionUpdateBoard:
+					boardUpdates++
+				}
 			}
 		}
 	}
 
 	log.Printf("::notice::Sync complete: %d items processed, %d actions taken, %d skipped, %d errors",
 		len(items), synced, skipped, errors)
+
+	// Log API budget summary.
+	log.Printf("::notice::API budget: %d GraphQL points used, %d remaining",
+		s.Client.PointsUsed, s.Client.RateLimitRemaining())
+	log.Printf("::notice::Mutations: %d label changes, %d board updates",
+		labelChanges, boardUpdates)
 
 	if errors > 0 {
 		return fmt.Errorf("%d sync errors occurred", errors)

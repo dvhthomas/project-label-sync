@@ -163,8 +163,14 @@ func (c *Client) FetchProjectItems(ctx context.Context, projectID string, labelP
   }
 }`
 
+	// consecutiveEmptyPages tracks pages where zero open issues were found,
+	// enabling early termination on old boards with many closed items.
+	const maxConsecutiveEmpty = 3
+
 	var allItems []ProjectItem
 	var cursor *string
+	var totalItems int
+	consecutiveEmpty := 0
 
 	for {
 		vars := map[string]any{"projectId": projectID}
@@ -220,13 +226,21 @@ func (c *Client) FetchProjectItems(ctx context.Context, projectID string, labelP
 			return nil, fmt.Errorf("fetch project items: %w", err)
 		}
 
+		openOnPage := 0
 		for _, node := range data.Node.Items.Nodes {
+			totalItems++
+
 			// Skip items that are not issues (drafts, PRs).
 			if node.Content == nil || node.Content.Number == 0 {
 				continue
 			}
 
 			content := node.Content
+
+			// Skip closed issues early — saves downstream mutations.
+			if content.State != "OPEN" {
+				continue
+			}
 
 			// Extract repo owner and name.
 			parts := strings.SplitN(content.Repository.NameWithOwner, "/", 2)
@@ -266,6 +280,7 @@ func (c *Client) FetchProjectItems(ctx context.Context, projectID string, labelP
 				}
 			}
 
+			openOnPage++
 			allItems = append(allItems, ProjectItem{
 				ItemID:      node.ID,
 				UpdatedAt:   boardUpdatedAt,
@@ -279,6 +294,19 @@ func (c *Client) FetchProjectItems(ctx context.Context, projectID string, labelP
 			})
 		}
 
+		// Track consecutive pages with zero open items for early termination.
+		if openOnPage == 0 && len(data.Node.Items.Nodes) > 0 {
+			consecutiveEmpty++
+			log.Printf("::notice::Page returned %d items but 0 open issues (%d/%d consecutive empty pages)",
+				len(data.Node.Items.Nodes), consecutiveEmpty, maxConsecutiveEmpty)
+			if consecutiveEmpty >= maxConsecutiveEmpty {
+				log.Printf("::notice::Stopping pagination early: %d consecutive pages with no open issues (likely old/closed items remain)", maxConsecutiveEmpty)
+				break
+			}
+		} else {
+			consecutiveEmpty = 0
+		}
+
 		if !data.Node.Items.PageInfo.HasNextPage {
 			break
 		}
@@ -286,7 +314,7 @@ func (c *Client) FetchProjectItems(ctx context.Context, projectID string, labelP
 		cursor = &endCursor
 	}
 
-	log.Printf("::notice::Fetched %d issue-backed items from project", len(allItems))
+	log.Printf("::notice::Fetched %d open issue items from %d total project items", len(allItems), totalItems)
 	return allItems, nil
 }
 

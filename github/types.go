@@ -25,11 +25,11 @@ type ProjectItem struct {
 	UpdatedAt   time.Time // Last update time of the project item
 	BoardStatus string    // Current Status field value (may be empty)
 
-	IssueNumber int       // Issue number in the repository
-	IssueState  string    // OPEN or CLOSED
-	RepoOwner   string    // Repository owner
-	RepoName    string    // Repository name
-	Labels      []string  // Current issue label names
+	IssueNumber int      // Issue number in the repository
+	IssueState  string   // OPEN or CLOSED
+	RepoOwner   string   // Repository owner
+	RepoName    string   // Repository name
+	Labels      []string // Current issue label names
 
 	// LabelEvents maps label name -> most recent LabeledEvent time.
 	// Only populated for labels matching the configured prefix.

@@ -192,9 +192,9 @@ func (c *Client) FetchProjectItems(ctx context.Context, projectID string, labelP
 							} `json:"nodes"`
 						} `json:"fieldValues"`
 						Content *struct {
-							Number    int    `json:"number"`
-							State     string `json:"state"`
-							Labels    struct {
+							Number int    `json:"number"`
+							State  string `json:"state"`
+							Labels struct {
 								Nodes []struct {
 									Name string `json:"name"`
 								} `json:"nodes"`

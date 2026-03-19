@@ -26,10 +26,12 @@ func TestReconcile(t *testing.T) {
 	syncer := NewSyncer(project, nil, nil, "status:", false)
 
 	tests := []struct {
-		name     string
-		item     gh.ProjectItem
-		wantLen  int
-		wantType []ActionType
+		name       string
+		item       gh.ProjectItem
+		wantLen    int
+		wantType   []ActionType
+		wantLabels []string // expected Label field per action (empty string = don't check)
+		wantStatus []string // expected StatusName field per action
 	}{
 		{
 			name: "board has status, no label -> add label",
@@ -44,8 +46,9 @@ func TestReconcile(t *testing.T) {
 				Labels:      []string{"bug"},
 				LabelEvents: map[string]time.Time{},
 			},
-			wantLen:  1,
-			wantType: []ActionType{ActionAddLabel},
+			wantLen:    1,
+			wantType:   []ActionType{ActionAddLabel},
+			wantLabels: []string{"status:In Progress"},
 		},
 		{
 			name: "label matches board -> no action",
@@ -62,8 +65,9 @@ func TestReconcile(t *testing.T) {
 					"status:In Progress": now,
 				},
 			},
-			wantLen:  1,
-			wantType: []ActionType{ActionSkip},
+			wantLen:    1,
+			wantType:   []ActionType{ActionSkip},
+			wantLabels: []string{""},
 		},
 		{
 			name: "label differs from board, label newer -> update board",
@@ -80,8 +84,9 @@ func TestReconcile(t *testing.T) {
 					"status:In Progress": later,
 				},
 			},
-			wantLen:  1,
-			wantType: []ActionType{ActionUpdateBoard},
+			wantLen:    1,
+			wantType:   []ActionType{ActionUpdateBoard},
+			wantStatus: []string{"In Progress"},
 		},
 		{
 			name: "label differs from board, board newer -> update label",
@@ -98,8 +103,9 @@ func TestReconcile(t *testing.T) {
 					"status:Todo": earlier,
 				},
 			},
-			wantLen:  2,
-			wantType: []ActionType{ActionRemoveLabel, ActionAddLabel},
+			wantLen:    2,
+			wantType:   []ActionType{ActionRemoveLabel, ActionAddLabel},
+			wantLabels: []string{"status:Todo", "status:In Progress"},
 		},
 		{
 			name: "multiple status labels -> clean up, board wins",
@@ -117,8 +123,9 @@ func TestReconcile(t *testing.T) {
 					"status:Done": earlier,
 				},
 			},
-			wantLen:  3, // remove Todo, remove Done, add In Progress
-			wantType: []ActionType{ActionRemoveLabel, ActionRemoveLabel, ActionAddLabel},
+			wantLen:    3, // remove Todo, remove Done, add In Progress
+			wantType:   []ActionType{ActionRemoveLabel, ActionRemoveLabel, ActionAddLabel},
+			wantLabels: []string{"status:Todo", "status:Done", "status:In Progress"},
 		},
 		{
 			name: "closed issue -> skip",
@@ -133,8 +140,9 @@ func TestReconcile(t *testing.T) {
 				Labels:      []string{},
 				LabelEvents: map[string]time.Time{},
 			},
-			wantLen:  1,
-			wantType: []ActionType{ActionSkip},
+			wantLen:    1,
+			wantType:   []ActionType{ActionSkip},
+			wantLabels: []string{""},
 		},
 		{
 			name: "empty board status -> skip",
@@ -149,8 +157,9 @@ func TestReconcile(t *testing.T) {
 				Labels:      []string{},
 				LabelEvents: map[string]time.Time{},
 			},
-			wantLen:  1,
-			wantType: []ActionType{ActionSkip},
+			wantLen:    1,
+			wantType:   []ActionType{ActionSkip},
+			wantLabels: []string{""},
 		},
 	}
 
@@ -171,6 +180,18 @@ func TestReconcile(t *testing.T) {
 					t.Errorf("action[%d]: got type %s, want %s", i, actions[i].Type, wantType)
 				}
 			}
+
+			for i, wantLabel := range tt.wantLabels {
+				if wantLabel != "" && actions[i].Label != wantLabel {
+					t.Errorf("action[%d]: got Label %q, want %q", i, actions[i].Label, wantLabel)
+				}
+			}
+
+			for i, wantStatus := range tt.wantStatus {
+				if wantStatus != "" && actions[i].StatusName != wantStatus {
+					t.Errorf("action[%d]: got StatusName %q, want %q", i, actions[i].StatusName, wantStatus)
+				}
+			}
 		})
 	}
 }
@@ -183,38 +204,5 @@ func TestFilterByPrefix(t *testing.T) {
 	}
 	if got[0] != "status:Todo" || got[1] != "status:In Progress" {
 		t.Errorf("got %v, want [status:Todo, status:In Progress]", got)
-	}
-}
-
-func TestExtractQuotedLabel(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{`removing stale label "status:Todo" (board is newer)`, "status:Todo"},
-		{`removing competing label "status:Done"`, "status:Done"},
-		{`no quotes here`, ""},
-	}
-	for _, tt := range tests {
-		got := extractQuotedLabel(tt.input)
-		if got != tt.want {
-			t.Errorf("extractQuotedLabel(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-func TestExtractBoardTarget(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{`label "status:In Progress" is newer; updating board to "In Progress"`, "In Progress"},
-		{`no match here`, ""},
-	}
-	for _, tt := range tests {
-		got := extractBoardTarget(tt.input)
-		if got != tt.want {
-			t.Errorf("extractBoardTarget(%q) = %q, want %q", tt.input, got, tt.want)
-		}
 	}
 }

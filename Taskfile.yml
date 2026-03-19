@@ -1,0 +1,48 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Run all quality checks
+    cmds:
+      - task: fmt-check
+      - task: vet
+      - task: lint
+      - task: test
+
+  fmt:
+    desc: Format all Go files
+    cmds:
+      - gofmt -w .
+
+  fmt-check:
+    desc: Check that all Go files are formatted
+    cmds:
+      - test -z "$(gofmt -l .)" || (echo "Files need formatting:" && gofmt -l . && exit 1)
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Run staticcheck
+    cmds:
+      - go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+  test:
+    desc: Run tests with race detector
+    cmds:
+      - go test -race -count=1 ./...
+
+  build:
+    desc: Build the binary
+    cmds:
+      - CGO_ENABLED=0 go build -o project-label-sync .
+
+  quality:
+    desc: Full quality gate (fmt + vet + lint + test)
+    cmds:
+      - task: fmt-check
+      - task: vet
+      - task: lint
+      - task: test

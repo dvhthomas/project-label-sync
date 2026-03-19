@@ -18,18 +18,20 @@ type Action struct {
 	IssueNumber int
 	Repo        string
 	ItemID      string
-	Detail      string // human-readable explanation
+	Label       string // Label to add/remove (for label actions)
+	StatusName  string // Target board status (for board actions)
+	Detail      string // human-readable explanation (logging only)
 }
 
 // ActionType enumerates the kinds of mutations the syncer can perform.
 type ActionType int
 
 const (
-	ActionNone          ActionType = iota
-	ActionAddLabel                 // Add a status label to an issue
-	ActionRemoveLabel              // Remove a status label from an issue
-	ActionUpdateBoard              // Update the board Status field
-	ActionSkip                     // Logged but no mutation needed
+	ActionNone        ActionType = iota
+	ActionAddLabel               // Add a status label to an issue
+	ActionRemoveLabel            // Remove a status label from an issue
+	ActionUpdateBoard            // Update the board Status field
+	ActionSkip                   // Logged but no mutation needed
 )
 
 func (a ActionType) String() string {
@@ -49,11 +51,11 @@ func (a ActionType) String() string {
 
 // Syncer holds the configuration and dependencies needed for reconciliation.
 type Syncer struct {
-	Project      *gh.ProjectInfo
-	Client       *gh.Client
-	Labels       *gh.LabelManager
-	LabelPrefix  string
-	DryRun       bool
+	Project     *gh.ProjectInfo
+	Client      *gh.Client
+	Labels      *gh.LabelManager
+	LabelPrefix string
+	DryRun      bool
 
 	// optionsByName maps status name -> option ID for board mutations.
 	optionsByName map[string]string
@@ -148,6 +150,7 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 			Type:        ActionAddLabel,
 			IssueNumber: num,
 			Repo:        repo,
+			Label:       expectedLabel,
 			Detail:      fmt.Sprintf("board has %q but no status label; adding %q", item.BoardStatus, expectedLabel),
 		}}
 
@@ -174,6 +177,7 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 				IssueNumber: num,
 				Repo:        repo,
 				ItemID:      item.ItemID,
+				StatusName:  statusName,
 				Detail: fmt.Sprintf(
 					"label %q (at %s) is newer than board %q (at %s); updating board to %q",
 					current, labelTime.Format(time.RFC3339),
@@ -188,12 +192,14 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 				Type:        ActionRemoveLabel,
 				IssueNumber: num,
 				Repo:        repo,
+				Label:       current,
 				Detail:      fmt.Sprintf("removing stale label %q (board is newer)", current),
 			},
 			{
 				Type:        ActionAddLabel,
 				IssueNumber: num,
 				Repo:        repo,
+				Label:       expectedLabel,
 				Detail:      fmt.Sprintf("adding label %q to match board status %q", expectedLabel, item.BoardStatus),
 			},
 		}
@@ -206,6 +212,7 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 				Type:        ActionRemoveLabel,
 				IssueNumber: num,
 				Repo:        repo,
+				Label:       l,
 				Detail:      fmt.Sprintf("removing competing label %q", l),
 			})
 		}
@@ -213,6 +220,7 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 			Type:        ActionAddLabel,
 			IssueNumber: num,
 			Repo:        repo,
+			Label:       expectedLabel,
 			Detail:      fmt.Sprintf("adding label %q (board wins over %d competing labels)", expectedLabel, len(currentStatusLabels)),
 		})
 		return actions
@@ -220,37 +228,26 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 }
 
 // Execute performs a single action.
-func (s *Syncer) Execute(ctx context.Context, item gh.ProjectItem, a Action) error {
+func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error {
 	log.Printf("[%s] %s#%d: %s", a.Type, a.Repo, a.IssueNumber, a.Detail)
 
 	switch a.Type {
 	case ActionAddLabel:
-		label := s.LabelPrefix + item.BoardStatus
-		// If the action detail indicates which label to add, parse it.
-		// For simplicity, we always derive from the board status for add actions
-		// unless this is part of a board-wins cleanup — but the expected label
-		// is already the board's status.
-		if err := s.Labels.EnsureLabelExists(ctx, a.Repo, label); err != nil {
+		if err := s.Labels.EnsureLabelExists(ctx, a.Repo, a.Label); err != nil {
 			return err
 		}
-		return s.Labels.AddLabel(ctx, a.Repo, a.IssueNumber, label)
+		return s.Labels.AddLabel(ctx, a.Repo, a.IssueNumber, a.Label)
 
 	case ActionRemoveLabel:
-		// Parse the label name from the detail — it's the quoted string.
-		label := extractQuotedLabel(a.Detail)
-		if label == "" {
-			return fmt.Errorf("could not determine label to remove from: %s", a.Detail)
-		}
-		return s.Labels.RemoveLabel(ctx, a.Repo, a.IssueNumber, label)
+		return s.Labels.RemoveLabel(ctx, a.Repo, a.IssueNumber, a.Label)
 
 	case ActionUpdateBoard:
-		statusName := extractBoardTarget(a.Detail)
-		optionID, ok := s.optionsByName[statusName]
+		optionID, ok := s.optionsByName[a.StatusName]
 		if !ok {
-			return fmt.Errorf("no board option found for status %q", statusName)
+			return fmt.Errorf("no board option found for status %q", a.StatusName)
 		}
 		if s.DryRun {
-			log.Printf("[dry-run] Would update board status to %q for item %s", statusName, a.ItemID)
+			log.Printf("[dry-run] Would update board status to %q for item %s", a.StatusName, a.ItemID)
 			return nil
 		}
 		return s.Client.UpdateItemStatus(ctx, s.Project.ID, a.ItemID, s.Project.FieldID, optionID)
@@ -271,29 +268,4 @@ func filterByPrefix(labels []string, prefix string) []string {
 		}
 	}
 	return result
-}
-
-// extractQuotedLabel extracts the first double-quoted string from text.
-func extractQuotedLabel(s string) string {
-	start := strings.Index(s, `"`)
-	if start < 0 {
-		return ""
-	}
-	end := strings.Index(s[start+1:], `"`)
-	if end < 0 {
-		return ""
-	}
-	return s[start+1 : start+1+end]
-}
-
-// extractBoardTarget extracts the target board status from an update-board
-// action detail string. It looks for the last quoted value after "updating board to".
-func extractBoardTarget(s string) string {
-	marker := "updating board to "
-	idx := strings.Index(s, marker)
-	if idx < 0 {
-		return ""
-	}
-	rest := s[idx+len(marker):]
-	return strings.Trim(rest, `"`)
 }

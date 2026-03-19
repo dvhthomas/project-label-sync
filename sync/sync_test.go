@@ -23,7 +23,13 @@ func TestReconcile(t *testing.T) {
 		},
 	}
 
-	syncer := NewSyncer(project, nil, nil, "status:", false, "testowner", 1)
+	mapping := map[string][]string{
+		"Todo":        {"todo"},
+		"In Progress": {"in-progress"},
+		"Done":        {"done"},
+	}
+
+	syncer := NewSyncer(project, nil, nil, mapping, "Status", false, "testowner", 1)
 
 	tests := []struct {
 		name       string
@@ -48,7 +54,7 @@ func TestReconcile(t *testing.T) {
 			},
 			wantLen:    1,
 			wantType:   []ActionType{ActionAddLabel},
-			wantLabels: []string{"status:In Progress"},
+			wantLabels: []string{"in-progress"},
 		},
 		{
 			name: "label matches board -> no action",
@@ -60,9 +66,9 @@ func TestReconcile(t *testing.T) {
 				IssueState:  "OPEN",
 				RepoOwner:   "owner",
 				RepoName:    "repo",
-				Labels:      []string{"status:In Progress", "bug"},
+				Labels:      []string{"in-progress", "bug"},
 				LabelEvents: map[string]time.Time{
-					"status:In Progress": now,
+					"in-progress": now,
 				},
 			},
 			wantLen:    1,
@@ -79,9 +85,9 @@ func TestReconcile(t *testing.T) {
 				IssueState:  "OPEN",
 				RepoOwner:   "owner",
 				RepoName:    "repo",
-				Labels:      []string{"status:In Progress"},
+				Labels:      []string{"in-progress"},
 				LabelEvents: map[string]time.Time{
-					"status:In Progress": later,
+					"in-progress": later,
 				},
 			},
 			wantLen:    1,
@@ -98,17 +104,17 @@ func TestReconcile(t *testing.T) {
 				IssueState:  "OPEN",
 				RepoOwner:   "owner",
 				RepoName:    "repo",
-				Labels:      []string{"status:Todo"},
+				Labels:      []string{"todo"},
 				LabelEvents: map[string]time.Time{
-					"status:Todo": earlier,
+					"todo": earlier,
 				},
 			},
 			wantLen:    2,
 			wantType:   []ActionType{ActionRemoveLabel, ActionAddLabel},
-			wantLabels: []string{"status:Todo", "status:In Progress"},
+			wantLabels: []string{"todo", "in-progress"},
 		},
 		{
-			name: "multiple status labels -> clean up, board wins",
+			name: "multiple mapped labels -> clean up, board wins",
 			item: gh.ProjectItem{
 				ItemID:      "item5",
 				UpdatedAt:   now,
@@ -117,15 +123,15 @@ func TestReconcile(t *testing.T) {
 				IssueState:  "OPEN",
 				RepoOwner:   "owner",
 				RepoName:    "repo",
-				Labels:      []string{"status:Todo", "status:Done", "bug"},
+				Labels:      []string{"todo", "done", "bug"},
 				LabelEvents: map[string]time.Time{
-					"status:Todo": earlier,
-					"status:Done": earlier,
+					"todo": earlier,
+					"done": earlier,
 				},
 			},
-			wantLen:    3, // remove Todo, remove Done, add In Progress
+			wantLen:    3, // remove todo, remove done, add in-progress
 			wantType:   []ActionType{ActionRemoveLabel, ActionRemoveLabel, ActionAddLabel},
-			wantLabels: []string{"status:Todo", "status:Done", "status:In Progress"},
+			wantLabels: []string{"todo", "done", "in-progress"},
 		},
 		{
 			name: "closed issue -> skip",
@@ -151,6 +157,23 @@ func TestReconcile(t *testing.T) {
 				UpdatedAt:   now,
 				BoardStatus: "",
 				IssueNumber: 7,
+				IssueState:  "OPEN",
+				RepoOwner:   "owner",
+				RepoName:    "repo",
+				Labels:      []string{},
+				LabelEvents: map[string]time.Time{},
+			},
+			wantLen:    1,
+			wantType:   []ActionType{ActionSkip},
+			wantLabels: []string{""},
+		},
+		{
+			name: "board status not in mapping -> skip",
+			item: gh.ProjectItem{
+				ItemID:      "item8",
+				UpdatedAt:   now,
+				BoardStatus: "Backlog",
+				IssueNumber: 8,
 				IssueState:  "OPEN",
 				RepoOwner:   "owner",
 				RepoName:    "repo",
@@ -196,13 +219,62 @@ func TestReconcile(t *testing.T) {
 	}
 }
 
-func TestFilterByPrefix(t *testing.T) {
-	labels := []string{"status:Todo", "bug", "status:In Progress", "enhancement"}
-	got := filterByPrefix(labels, "status:")
+func TestFilterToMapped(t *testing.T) {
+	allMapped := []string{"todo", "in-progress", "done"}
+	labels := []string{"todo", "bug", "in-progress", "enhancement"}
+	got := filterToMapped(labels, allMapped)
 	if len(got) != 2 {
 		t.Fatalf("got %d labels, want 2", len(got))
 	}
-	if got[0] != "status:Todo" || got[1] != "status:In Progress" {
-		t.Errorf("got %v, want [status:Todo, status:In Progress]", got)
+	if got[0] != "todo" || got[1] != "in-progress" {
+		t.Errorf("got %v, want [todo, in-progress]", got)
+	}
+}
+
+func TestReconcileMultiLabel(t *testing.T) {
+	now := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
+
+	project := &gh.ProjectInfo{
+		ID:      "PVT_test",
+		Title:   "Test Project",
+		FieldID: "PVTSSF_test",
+		Options: []gh.StatusOption{
+			{ID: "opt1", Name: "In Progress"},
+		},
+	}
+
+	mapping := map[string][]string{
+		"In Progress": {"in-progress", "active"},
+	}
+
+	syncer := NewSyncer(project, nil, nil, mapping, "Status", false, "testowner", 1)
+
+	item := gh.ProjectItem{
+		ItemID:      "item1",
+		UpdatedAt:   now,
+		BoardStatus: "In Progress",
+		IssueNumber: 1,
+		IssueState:  "OPEN",
+		RepoOwner:   "owner",
+		RepoName:    "repo",
+		Labels:      []string{"bug"},
+		LabelEvents: map[string]time.Time{},
+	}
+
+	actions := syncer.Reconcile(item)
+	if len(actions) != 2 {
+		t.Fatalf("got %d actions, want 2", len(actions))
+	}
+	for _, a := range actions {
+		if a.Type != ActionAddLabel {
+			t.Errorf("expected ActionAddLabel, got %s", a.Type)
+		}
+	}
+	// Check both labels are added (order from mapping slice).
+	if actions[0].Label != "in-progress" {
+		t.Errorf("action[0]: got Label %q, want %q", actions[0].Label, "in-progress")
+	}
+	if actions[1].Label != "active" {
+		t.Errorf("action[1]: got Label %q, want %q", actions[1].Label, "active")
 	}
 }

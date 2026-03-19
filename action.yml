@@ -10,10 +10,13 @@ inputs:
   token:
     description: 'Classic PAT with project + repo scopes (GITHUB_TOKEN cannot access projects)'
     required: true
-  label-prefix:
-    description: 'Prefix for status labels'
+  field:
+    description: 'Project field name to sync (default: Status)'
     required: false
-    default: 'status:'
+    default: 'Status'
+  mapping:
+    description: 'YAML mapping of field values to label names (one per line, "FieldValue: label-name")'
+    required: true
   dry-run:
     description: 'Log what would change without making mutations'
     required: false

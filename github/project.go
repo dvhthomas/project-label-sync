@@ -17,22 +17,26 @@ import (
 //
 //	https://github.com/users/<login>/projects/<number>
 //	https://github.com/orgs/<login>/projects/<number>
-func (c *Client) ResolveProject(ctx context.Context, projectURL string) (*ProjectInfo, error) {
+func (c *Client) ResolveProject(ctx context.Context, projectURL string, fieldName string) (*ProjectInfo, error) {
 	ownerType, login, number, err := parseProjectURL(projectURL)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build the field fragment with the configured field name.
+	// GraphQL field(name:) takes a literal string, not a variable.
+	fieldFragment := fmt.Sprintf(`field(name: %q)`, fieldName)
+
 	// Build query based on owner type (user vs org).
 	var query string
 	switch ownerType {
 	case "users":
-		query = `query($login: String!, $number: Int!) {
+		query = fmt.Sprintf(`query($login: String!, $number: Int!) {
   user(login: $login) {
     projectV2(number: $number) {
       id
       title
-      field(name: "Status") {
+      %s {
         ... on ProjectV2SingleSelectField {
           id
           options { id name }
@@ -40,14 +44,14 @@ func (c *Client) ResolveProject(ctx context.Context, projectURL string) (*Projec
       }
     }
   }
-}`
+}`, fieldFragment)
 	case "orgs":
-		query = `query($login: String!, $number: Int!) {
+		query = fmt.Sprintf(`query($login: String!, $number: Int!) {
   organization(login: $login) {
     projectV2(number: $number) {
       id
       title
-      field(name: "Status") {
+      %s {
         ... on ProjectV2SingleSelectField {
           id
           options { id name }
@@ -55,7 +59,7 @@ func (c *Client) ResolveProject(ctx context.Context, projectURL string) (*Projec
       }
     }
   }
-}`
+}`, fieldFragment)
 	}
 
 	vars := map[string]any{
@@ -104,7 +108,7 @@ func (c *Client) ResolveProject(ctx context.Context, projectURL string) (*Projec
 		return nil, fmt.Errorf("project not found at %s", projectURL)
 	}
 	if p.Field.ID == "" {
-		return nil, fmt.Errorf("project %q has no Status single-select field", p.Title)
+		return nil, fmt.Errorf("project %q has no %q single-select field", p.Title, fieldName)
 	}
 
 	info := &ProjectInfo{
@@ -134,7 +138,7 @@ const batchSize = 20
 // BatchFetchItemStatus fetches project item status and label timeline events
 // for a batch of issues using aliased GraphQL queries. It filters projectItems
 // to the target project ID.
-func (c *Client) BatchFetchItemStatus(ctx context.Context, projectID string, issueNumbers []int, repoOwner, repoName string) (map[int]ItemStatus, error) {
+func (c *Client) BatchFetchItemStatus(ctx context.Context, projectID string, issueNumbers []int, repoOwner, repoName, fieldName string) (map[int]ItemStatus, error) {
 	if len(issueNumbers) == 0 {
 		return nil, nil
 	}
@@ -263,7 +267,7 @@ func (c *Client) BatchFetchItemStatus(ctx context.Context, projectID string, iss
 			status.UpdatedAt = pi.UpdatedAt
 
 			for _, fv := range pi.FieldValues.Nodes {
-				if fv.Field.Name == "Status" && fv.Name != "" {
+				if fv.Field.Name == fieldName && fv.Name != "" {
 					status.BoardStatus = fv.Name
 					if !fv.UpdatedAt.IsZero() {
 						status.UpdatedAt = fv.UpdatedAt
@@ -295,7 +299,7 @@ func (c *Client) BatchFetchItemStatus(ctx context.Context, projectID string, iss
 // 2. Batch GraphQL to enrich with project item status and label events
 //
 // Returns the same []ProjectItem that downstream Reconcile/Execute expect.
-func (c *Client) FetchSyncData(ctx context.Context, projectID, projectOwner string, projectNumber int, labelPrefix string) ([]ProjectItem, error) {
+func (c *Client) FetchSyncData(ctx context.Context, projectID, projectOwner string, projectNumber int, fieldName string, allMappedLabels []string) ([]ProjectItem, error) {
 	// Phase 1: Search API for open issues.
 	searchResults, err := c.SearchOpenIssuesInProject(ctx, projectOwner, projectNumber)
 	if err != nil {
@@ -338,7 +342,7 @@ func (c *Client) FetchSyncData(ctx context.Context, projectID, projectOwner stri
 			}
 			batch := numbers[start:end]
 
-			statuses, err := c.BatchFetchItemStatus(ctx, projectID, batch, key.Owner, key.Name)
+			statuses, err := c.BatchFetchItemStatus(ctx, projectID, batch, key.Owner, key.Name, fieldName)
 			if err != nil {
 				return nil, fmt.Errorf("batch fetch status for %s/%s: %w", key.Owner, key.Name, err)
 			}
@@ -362,10 +366,14 @@ func (c *Client) FetchSyncData(ctx context.Context, projectID, projectOwner stri
 			continue
 		}
 
-		// Filter label events to only those matching the prefix.
+		// Filter label events to only those matching mapped labels.
+		mappedSet := make(map[string]bool, len(allMappedLabels))
+		for _, l := range allMappedLabels {
+			mappedSet[l] = true
+		}
 		filteredEvents := make(map[string]time.Time)
 		for name, t := range status.LabelEvents {
-			if strings.HasPrefix(name, labelPrefix) {
+			if mappedSet[name] {
 				filteredEvents[name] = t
 			}
 		}

@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
+	"sort"
 	"time"
 
 	gh "github.com/dvhthomas/project-label-sync/github"
@@ -55,40 +55,57 @@ func (a ActionType) String() string {
 
 // Syncer holds the configuration and dependencies needed for reconciliation.
 type Syncer struct {
-	Project       *gh.ProjectInfo
-	Client        *gh.Client
-	Labels        *gh.LabelManager
-	LabelPrefix   string
-	DryRun        bool
-	ProjectOwner  string
-	ProjectNumber int
+	Project         *gh.ProjectInfo
+	Client          *gh.Client
+	Labels          *gh.LabelManager
+	Mapping         map[string][]string // field value -> labels
+	ReverseMap      map[string]string   // label -> field value
+	AllMappedLabels []string            // flat list of all mapped labels
+	FieldName       string
+	DryRun          bool
+	ProjectOwner    string
+	ProjectNumber   int
 
 	// optionsByName maps status name -> option ID for board mutations.
 	optionsByName map[string]string
 }
 
-// NewSyncer creates a Syncer from the given project info and clients.
-func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManager, prefix string, dryRun bool, projectOwner string, projectNumber int) *Syncer {
+// NewSyncer creates a Syncer from the given project info, clients, and mapping.
+func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManager, mapping map[string][]string, fieldName string, dryRun bool, projectOwner string, projectNumber int) *Syncer {
 	opts := make(map[string]string, len(project.Options))
 	for _, o := range project.Options {
 		opts[o.Name] = o.ID
 	}
+
+	reverseMap := make(map[string]string)
+	var allLabels []string
+	for fieldValue, lbls := range mapping {
+		for _, l := range lbls {
+			reverseMap[l] = fieldValue
+			allLabels = append(allLabels, l)
+		}
+	}
+	sort.Strings(allLabels)
+
 	return &Syncer{
-		Project:       project,
-		Client:        client,
-		Labels:        labels,
-		LabelPrefix:   prefix,
-		DryRun:        dryRun,
-		ProjectOwner:  projectOwner,
-		ProjectNumber: projectNumber,
-		optionsByName: opts,
+		Project:         project,
+		Client:          client,
+		Labels:          labels,
+		Mapping:         mapping,
+		ReverseMap:      reverseMap,
+		AllMappedLabels: allLabels,
+		FieldName:       fieldName,
+		DryRun:          dryRun,
+		ProjectOwner:    projectOwner,
+		ProjectNumber:   projectNumber,
+		optionsByName:   opts,
 	}
 }
 
 // Run fetches all project items via the Search API + batch GraphQL enrichment,
 // then reconciles each one.
 func (s *Syncer) Run(ctx context.Context) error {
-	items, err := s.Client.FetchSyncData(ctx, s.Project.ID, s.ProjectOwner, s.ProjectNumber, s.LabelPrefix)
+	items, err := s.Client.FetchSyncData(ctx, s.Project.ID, s.ProjectOwner, s.ProjectNumber, s.FieldName, s.AllMappedLabels)
 	if err != nil {
 		return err
 	}
@@ -172,23 +189,38 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 		}}
 	}
 
-	expectedLabel := s.LabelPrefix + item.BoardStatus
-	currentStatusLabels := filterByPrefix(item.Labels, s.LabelPrefix)
-
-	switch {
-	case len(currentStatusLabels) == 0:
-		// Board has status, issue has no status label -> board wins.
+	// Look up expected labels from the mapping.
+	expectedLabels, mapped := s.Mapping[item.BoardStatus]
+	if !mapped {
 		return []Action{{
-			Type:        ActionAddLabel,
+			Type:        ActionSkip,
 			IssueNumber: num,
 			Repo:        repo,
-			Label:       expectedLabel,
-			Detail:      fmt.Sprintf("board has %q but no status label; adding %q", item.BoardStatus, expectedLabel),
+			Detail:      fmt.Sprintf("board status %q not in mapping", item.BoardStatus),
 		}}
+	}
 
-	case len(currentStatusLabels) == 1:
-		current := currentStatusLabels[0]
-		if current == expectedLabel {
+	currentMappedLabels := filterToMapped(item.Labels, s.AllMappedLabels)
+
+	switch {
+	case len(currentMappedLabels) == 0:
+		// Board has status, issue has no mapped label -> board wins, add all expected labels.
+		var actions []Action
+		for _, lbl := range expectedLabels {
+			actions = append(actions, Action{
+				Type:        ActionAddLabel,
+				IssueNumber: num,
+				Repo:        repo,
+				Label:       lbl,
+				Detail:      fmt.Sprintf("board has %q but no mapped label; adding %q", item.BoardStatus, lbl),
+			})
+		}
+		return actions
+
+	case len(currentMappedLabels) == 1 && len(expectedLabels) == 1:
+		current := currentMappedLabels[0]
+		expected := expectedLabels[0]
+		if current == expected {
 			return []Action{{
 				Type:        ActionSkip,
 				IssueNumber: num,
@@ -203,18 +235,22 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 
 		if labelTime.After(boardTime) {
 			// Label is newer -> update board to match.
-			statusName := strings.TrimPrefix(current, s.LabelPrefix)
+			targetStatus, ok := s.ReverseMap[current]
+			if !ok {
+				// Label is mapped but not to a known field value; board wins.
+				return s.boardWins(num, repo, item, currentMappedLabels, expectedLabels)
+			}
 			return []Action{{
 				Type:        ActionUpdateBoard,
 				IssueNumber: num,
 				Repo:        repo,
 				ItemID:      item.ItemID,
-				StatusName:  statusName,
+				StatusName:  targetStatus,
 				Detail: fmt.Sprintf(
 					"label %q (at %s) is newer than board %q (at %s); updating board to %q",
-					current, labelTime.Format(time.RFC3339),
-					item.BoardStatus, boardTime.Format(time.RFC3339),
-					statusName),
+					current, labelTime.Format("2006-01-02T15:04:05Z"),
+					item.BoardStatus, boardTime.Format("2006-01-02T15:04:05Z"),
+					targetStatus),
 			}}
 		}
 
@@ -231,32 +267,39 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 				Type:        ActionAddLabel,
 				IssueNumber: num,
 				Repo:        repo,
-				Label:       expectedLabel,
-				Detail:      fmt.Sprintf("adding label %q to match board status %q", expectedLabel, item.BoardStatus),
+				Label:       expected,
+				Detail:      fmt.Sprintf("adding label %q to match board status %q", expected, item.BoardStatus),
 			},
 		}
 
 	default:
-		// Multiple status labels -> clean up, board wins.
-		var actions []Action
-		for _, l := range currentStatusLabels {
-			actions = append(actions, Action{
-				Type:        ActionRemoveLabel,
-				IssueNumber: num,
-				Repo:        repo,
-				Label:       l,
-				Detail:      fmt.Sprintf("removing competing label %q", l),
-			})
-		}
+		// Multiple mapped labels or multi-label mapping mismatch -> clean up, board wins.
+		return s.boardWins(num, repo, item, currentMappedLabels, expectedLabels)
+	}
+}
+
+// boardWins removes all current mapped labels and adds the expected ones.
+func (s *Syncer) boardWins(num int, repo string, item gh.ProjectItem, currentMappedLabels, expectedLabels []string) []Action {
+	var actions []Action
+	for _, l := range currentMappedLabels {
+		actions = append(actions, Action{
+			Type:        ActionRemoveLabel,
+			IssueNumber: num,
+			Repo:        repo,
+			Label:       l,
+			Detail:      fmt.Sprintf("removing competing label %q", l),
+		})
+	}
+	for _, lbl := range expectedLabels {
 		actions = append(actions, Action{
 			Type:        ActionAddLabel,
 			IssueNumber: num,
 			Repo:        repo,
-			Label:       expectedLabel,
-			Detail:      fmt.Sprintf("adding label %q (board wins over %d competing labels)", expectedLabel, len(currentStatusLabels)),
+			Label:       lbl,
+			Detail:      fmt.Sprintf("adding label %q (board wins over %d competing labels)", lbl, len(currentMappedLabels)),
 		})
-		return actions
 	}
+	return actions
 }
 
 // Execute performs a single action.
@@ -291,11 +334,15 @@ func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error 
 	return nil
 }
 
-// filterByPrefix returns labels that start with the given prefix.
-func filterByPrefix(labels []string, prefix string) []string {
+// filterToMapped returns labels that are present in the allMappedLabels list.
+func filterToMapped(labels []string, allMappedLabels []string) []string {
+	set := make(map[string]bool, len(allMappedLabels))
+	for _, l := range allMappedLabels {
+		set[l] = true
+	}
 	var result []string
 	for _, l := range labels {
-		if strings.HasPrefix(l, prefix) {
+		if set[l] {
 			result = append(result, l)
 		}
 	}

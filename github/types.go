@@ -32,7 +32,7 @@ type ProjectItem struct {
 	Labels      []string // Current issue label names
 
 	// LabelEvents maps label name -> most recent LabeledEvent time.
-	// Only populated for labels matching the configured prefix.
+	// Only populated for labels present in the configured mapping.
 	LabelEvents map[string]time.Time
 }
 

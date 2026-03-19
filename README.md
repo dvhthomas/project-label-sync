@@ -1,140 +1,38 @@
 # Project Label Sync
 
-Bidirectional sync between GitHub Projects v2 status fields and issue labels.
+Keep your GitHub issue labels in sync with your GitHub Projects board — automatically.
 
-Move an issue to "In Progress" on your board and the `in-progress` label appears. Add a label and the board updates to match. Runs on a schedule via GitHub Actions or locally via CLI.
+## The problem
 
-## Quick Start
+You manage work on a GitHub Projects board. You drag issues to "In Progress" and "Done." But labels don't update to match, so any tool, workflow, or search that relies on labels is out of date. Updating labels by hand is tedious and easy to forget.
 
-Create `.github/project-label-sync.yml` in your repo:
+## What this does
+
+This tool reads your project board and your issue labels, compares them, and reconciles the difference. If you move an issue to "In Progress" on the board, the `in-progress` label appears on the issue. If someone adds a label directly, the board updates to match.
+
+It runs on a schedule (every 15 minutes, or whatever you choose) via GitHub Actions, or locally from the command line. It never writes anything unless you explicitly pass `--apply`.
+
+## Setup
+
+### 1. Create a config file
+
+Add `.github/project-label-sync.yml` to your repo. The config tells the tool which project board to watch and how to map each status to one or more labels:
 
 ```yaml
-project-url: https://github.com/users/dvhthomas/projects/1
+project-url: https://github.com/orgs/myorg/projects/1
 field: Status
 mapping:
-  "In progress":
+  "In Progress":
     - in-progress
-  "In review":
+  "In Review":
     - in-review
   Done:
     - done
 ```
 
-### Preview what would change
+Each key under `mapping` must exactly match a value in your project's Status field (case-sensitive). Statuses you leave out are ignored — if your board has "Backlog" and you don't list it, those issues won't get labels.
 
-```sh
-project-label-sync --token ghp_... --config examples/microsoft-ebpf-for-windows.yml
-```
-
-```
-Preview mode — showing what would change. Use --apply to update issues.
-Project: eBPF for Windows (3 Status options: Todo, In Progress, Done)
-Configuration:
-  Project: eBPF for Windows (https://github.com/orgs/microsoft/projects/2098)
-  Field: Status
-  Mappings:
-    "Done" → [done]
-    "In Progress" → [in-progress]
-    "Todo" → [todo]
-  Mode: Preview (no changes made — use --apply to update issues)
-Label check on microsoft/ebpf-for-windows:
-  ✗ done (will be created)
-  ✗ in-progress (will be created)
-  ✗ todo (will be created)
-[add-label] microsoft/ebpf-for-windows#3668: board has "Todo" but no mapped label; adding "todo"
-[add-label] microsoft/ebpf-for-windows#3667: board has "Todo" but no mapped label; adding "todo"
-[add-label] microsoft/ebpf-for-windows#3666: board has "In Progress" but no mapped label; adding "in-progress"
-[add-label] microsoft/ebpf-for-windows#3659: board has "In Progress" but no mapped label; adding "in-progress"
-  ... (94 more issues)
-Summary:
-  Issues scanned: 98
-  Already in sync: 0
-  Would add labels: 98 issues
-  Would remove labels: 0 issues
-  Would update board: 0 issues
-  Labels to create: 3
-  Skipped (unmapped/closed): 0
-  Errors: 0
-```
-
-### Apply changes
-
-```sh
-go run . --token ghp_... --config .github/project-label-sync.yml --apply
-```
-
-## GitHub Actions
-
-```yaml
-name: Sync Project Labels
-on:
-  schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:
-
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dvhthomas/project-label-sync@v0.1.1
-        with:
-          token: ${{ secrets.PROJECT_PAT }}
-          apply: true
-```
-
-The `actions/checkout` step is required so the config file is available in the workspace.
-
-## Configuration
-
-```yaml
-# .github/project-label-sync.yml
-project-url: https://github.com/users/yourname/projects/1   # required
-field: Status                                                 # optional, defaults to "Status"
-mapping:                                                      # required
-  "In Progress":
-    - in-progress
-  Done:
-    - done
-  # Backlog intentionally omitted — no label sync for it
-```
-
-| Key | Required | Default | Description |
-|-----|----------|---------|-------------|
-| `project-url` | Yes | | GitHub Projects v2 URL (user or org) |
-| `field` | No | `Status` | Single-select field name to sync |
-| `mapping` | Yes | | Map of field values to label name lists |
-
-### Mapping
-
-Each key is a project field value. Values are label names to sync. Omit a status to skip it.
-
-A status can map to multiple labels:
-
-```yaml
-mapping:
-  "In Progress":
-    - in-progress
-    - active
-```
-
-Labels can have spaces and special characters — just quote them:
-
-```yaml
-mapping:
-  "In Progress":
-    - "In Progress"
-  "Code Review":
-    - "Needs Review"
-  Done:
-    - "Done & Shipped"
-```
-
-### Real-world example: GitHub Public Roadmap
-
-The [GitHub Public Roadmap](https://github.com/orgs/github/projects/4247) uses a **Release Phase** field (not Status) with values `GA` and `Public Preview`. They also use labels like `exploring`, `in design`, `preview`, `shipped`, and `ga` for lifecycle stages.
-
-A sync config for this project would target the Release Phase field and map each phase to multiple existing labels:
+The `field` defaults to `Status` but can be any single-select field on your project. For example, the [GitHub Public Roadmap](https://github.com/orgs/github/projects/4247) uses a `Release Phase` field:
 
 ```yaml
 project-url: https://github.com/orgs/github/projects/4247
@@ -148,156 +46,182 @@ mapping:
     - shipped
 ```
 
-This shows several features working together:
-- Custom field name (`Release Phase` instead of the default `Status`)
-- Multiple labels per status (`GA` syncs both `ga` and `shipped`)
-- Labels with spaces (`"Public Preview"`)
-- Unmapped lifecycle labels (`exploring`, `in design`) are left untouched
+A status can map to multiple labels, and labels can contain spaces or special characters (just quote them in YAML). See the [examples](examples/) directory for more.
 
-Labels are auto-created with a neutral gray color (`#ededed`) on first sync.
+### 2. Create a personal access token
 
-## How It Works
+The GitHub Actions `GITHUB_TOKEN` cannot access project board data. You need a **classic** personal access token with `project` and `repo` scopes.
 
-1. Searches for open issues in the project via GitHub Search API
-2. Fetches each issue's board status and label history via GraphQL
-3. Compares timestamps to determine which is newer (label or board)
-4. In `--apply` mode: creates missing labels, adds/removes labels, updates board status
+Create one here: https://github.com/settings/tokens/new?scopes=project,repo&description=project-label-sync
 
-Conflicts are resolved by most-recent-write-wins. If a label was added more recently than the board was updated, the board changes to match. If the board was updated more recently, labels change to match.
+Add it as a repository secret named `PROJECT_PAT`.
 
-## Token Requirements
+> Fine-grained PATs do not support the Projects v2 GraphQL API. You must use a classic token.
 
-Requires a classic PAT with `project` and `repo` scopes. `GITHUB_TOKEN` cannot access project data. Fine-grained PATs do not support the Projects v2 GraphQL API.
+### 3. Preview before you commit
 
-Store it as a repository secret (e.g., `PROJECT_PAT`).
+Before enabling automation, run a preview to see what the tool would do. No issues are modified, no labels are created.
 
-## Troubleshooting
+```sh
+# Install
+go install github.com/dvhthomas/project-label-sync@latest
 
-### Config file not found
-
-```
-$ project-label-sync --config oops.yml
-ERROR: config file not found: oops.yml
-
-Create one with:
-
-  project-url: https://github.com/users/YOURNAME/projects/1
-  field: Status
-  mapping:
-    "In Progress":
-      - in-progress
+# Preview
+project-label-sync --token ghp_... --config .github/project-label-sync.yml
 ```
 
-**Fix:** Create the config file. The default location is `.github/project-label-sync.yml`.
-
-### Missing token
+The output shows your configuration, which labels exist or would be created, and what would change on each issue:
 
 ```
-$ project-label-sync --config .github/project-label-sync.yml
-ERROR: token is required
-
-Pass a classic PAT with 'project' and 'repo' scopes:
-  --token ghp_...
-  or set GH_TOKEN=ghp_...
-
-Create one at: https://github.com/settings/tokens/new?scopes=project,repo&description=project-label-sync
-```
-
-**Fix:** Create a classic PAT (not fine-grained) with `project` and `repo` scopes. Pass it via `--token` or `GH_TOKEN`.
-
-### Wrong field name
-
-```
-$ project-label-sync --config my-config.yml
-ERROR: project has no single-select field named "Priority"
-
-Check the field name in your project settings (field names are case-sensitive).
-The default is "Status". Your config has: field: Priority
-```
-
-**Fix:** The `field:` in your config doesn't match any single-select field on the project. Most projects use `Status` (the default). Check your project's field names in the project settings.
-
-### Typo in status value
-
-```
-$ project-label-sync --config my-config.yml
+Preview mode — showing what would change. Use --apply to update issues.
 Project: eBPF for Windows Triage (3 Status options: Todo, In Progress, Done)
+Configuration:
+  Project: eBPF for Windows Triage (https://github.com/orgs/microsoft/projects/2098)
+  Field: Status
+  Mappings:
+    "Done" → [done]
+    "In Progress" → [in-progress]
+    "Todo" → [todo]
+  Mode: Preview (no changes made — use --apply to update issues)
 
-WARNING: project status "Todo" is not mapped (will be ignored)
-WARNING: project status "In Progress" is not mapped (will be ignored)
-WARNING: project status "Done" is not mapped (will be ignored)
-ERROR: mapping contains "Doen" but the project's Status field has no such option
-ERROR: mapping contains "In Progres" but the project's Status field has no such option
-ERROR: Available options: Done, In Progress, Todo
-ERROR: config has 2 invalid mapping value(s)
+Label check on microsoft/ebpf-for-windows:
+  ✗ done (will be created)
+  ✗ in-progress (will be created)
+  ✗ todo (will be created)
 
-The mapping keys must exactly match your project's Status field options (case-sensitive).
-Copy the exact names from the 'Available options' list above into your config.
+Summary:
+  Issues scanned: 98
+  Already in sync: 0
+  Would add labels: 98 issues
+  Would remove labels: 0 issues
+  Would update board: 0 issues
+  Labels to create: 3
+  Skipped (unmapped/closed): 0
+  Errors: 0
 ```
 
-**Fix:** The mapping keys must match exactly (case-sensitive). Copy the names from the "Available options" line into your config.
+Add `--verbose` to see the per-issue detail.
 
-### Case sensitivity
+### 4. Apply changes
 
-`"In Progress"` and `"In progress"` are different. The tool tells you the exact names:
+When the preview looks right, add `--apply`:
+
+```sh
+project-label-sync --token ghp_... --config .github/project-label-sync.yml --apply
+```
+
+### 5. Automate with GitHub Actions
+
+Add a workflow to run the sync on a schedule:
+
+```yaml
+# .github/workflows/label-sync.yml
+name: Sync Project Labels
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # every 15 minutes
+  workflow_dispatch:          # manual trigger for testing
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dvhthomas/project-label-sync@v0.1.1
+        with:
+          token: ${{ secrets.PROJECT_PAT }}
+          apply: true
+```
+
+The `actions/checkout` step is required so the config file is available.
+
+## How conflicts are resolved
+
+When the board says one thing and the labels say another, the tool compares timestamps:
+
+- **Board was updated more recently** → labels change to match the board
+- **Label was added more recently** → board changes to match the label
+
+On first run, every issue gets labels from the board (there are no competing label timestamps yet).
+
+## How it works under the hood
+
+1. Searches for open issues in the project via the GitHub Search API (efficient — no full board scan)
+2. Fetches each issue's board status and label history via GraphQL (batched, 20 issues per call)
+3. Compares timestamps to determine which source is newer
+4. In `--apply` mode: creates missing labels, adds/removes labels, updates board status
+5. Only processes open issues — closed issues are skipped entirely
+
+## Configuration reference
+
+| Key | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `project-url` | Yes | | GitHub Projects v2 URL. Copy from your browser — `/views/1` suffixes are handled automatically. |
+| `field` | No | `Status` | The single-select field to sync. |
+| `mapping` | Yes | | Maps field values to label names. Each value must exactly match an option in the field (case-sensitive). |
+
+## Common mistakes and how to fix them
+
+### The tool says my status values don't match
 
 ```
-Project: CalcMark Tracker (5 Status options: Backlog, Ready, In progress, In review, Done)
+ERROR: mapping contains "In Progress" but the project's Status field has no such option
+ERROR: Available options: Backlog, Ready, In progress, In review, Done
 ```
 
-Use `"In progress"` (lowercase p), not `"In Progress"`.
+Status names are **case-sensitive**. `"In Progress"` is not the same as `"In progress"`. Copy the exact names from the "Available options" line.
 
-### Duplicate labels across statuses
+### The tool says my field doesn't exist
 
 ```
-$ project-label-sync --config my-config.yml
+ERROR: project has no single-select field named "Priority"
+```
+
+Check the field name in your project's settings. Most projects use `Status`. Some use custom fields like `Release Phase`.
+
+### The tool says a label is used by multiple statuses
+
+```
 ERROR: config error: the same label cannot be used for multiple statuses
 
   "in-progress" is used by statuses: "Ready", "In progress"
-
-each status must map to unique labels so the sync can distinguish them
 ```
 
-**Fix:** Each status must map to a unique set of labels. If "Ready" and "In Progress" both map to `in-progress`, the tool can't tell them apart and would corrupt your data. Give each status its own label:
+Each status must map to a distinct set of labels. If two statuses share a label, the tool can't tell which status an issue is in. Give each status its own label.
 
-```yaml
-mapping:
-  Ready:
-    - ready
-  "In progress":
-    - in-progress
-```
-
-### Non-standard status names
-
-Many projects don't use "Todo/In Progress/Done". Real examples:
-
-| Project | Field | Options |
-|---------|-------|---------|
-| GitHub Roadmap | Status | Q3 2025, Q4 2025, Q1 2026, Future |
-| GitHub Roadmap | Release Phase | GA, Public Preview |
-| Kubernetes 1.36 | Status | At risk for code freeze, Tracked for PRR freeze, Deferred, ... (14 options) |
-| grafana/k6 roadmap | Status | Short term, Mid term, Long term, Released |
-| CalcMark | Status | Backlog, Ready, In progress, In review, Done |
-
-**Tip:** Run the tool with any config to see your project's actual options. The startup output always shows them:
-
-```
-Project: my-project (4 Status options: Short term, Mid term, Long term, Released)
-```
-
-### Unmapped statuses (not an error)
+### I see warnings about unmapped statuses
 
 ```
 WARNING: project status "Backlog" is not mapped (will be ignored)
 ```
 
-This is informational — issues in "Backlog" won't get any labels. This is usually intentional (you only want labels for active work stages). To include it, add it to your mapping.
+This is informational. Issues in unmapped statuses won't get labels. This is usually intentional.
+
+### What status names do other projects use?
+
+Every project is different. Run the tool to see your project's options:
+
+```
+Project: my-project (4 Status options: Short term, Mid term, Long term, Released)
+```
+
+Real examples from public projects:
+
+| Project | Field | Options |
+|---------|-------|---------|
+| GitHub Roadmap | Status | Q3 2025, Q4 2025, Q1 2026, Future |
+| GitHub Roadmap | Release Phase | GA, Public Preview |
+| Kubernetes 1.36 | Status | At risk for code freeze, Tracked for PRR freeze, ... (14 options) |
+| grafana/k6 | Status | Short term, Mid term, Long term, Released |
 
 ## Limitations
 
-- Polling-based (cron schedule), not real-time
-- GitHub Search API returns max 1000 results per query
-- Requires classic PAT (fine-grained PATs don't support Projects v2)
-- Single project per config file
-- Open issues only (closed issues are skipped)
+- **Polling, not real-time.** The GitHub API does not support project board events as Actions triggers. The tool runs on a cron schedule.
+- **1,000 issue limit.** The GitHub Search API returns at most 1,000 results. If your project has more than 1,000 open issues, some will not be synced.
+- **Classic PAT required.** Fine-grained personal access tokens do not support the Projects v2 GraphQL API.
+- **One project per config.** Each config file syncs one project. For multiple projects, use multiple config files and workflow steps.
+- **Open issues only.** Closed issues are not synced.
+
+## License
+
+MIT

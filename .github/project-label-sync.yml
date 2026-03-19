@@ -1,0 +1,11 @@
+# .github/project-label-sync.yml
+project-url: https://github.com/users/dvhthomas/projects/1
+field: Status  # optional, defaults to "Status"
+mapping:
+  "In Progress":
+    - in-progress
+  "In Review":
+    - in-review
+  Done:
+    - done
+  # Backlog is intentionally omitted — no label sync for it

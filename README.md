@@ -4,6 +4,37 @@ Bidirectionally sync GitHub Projects v2 status fields with issue labels on a cro
 
 ## Quick start
 
+### 1. Create a config file
+
+Create `.github/project-label-sync.yml` in your repository:
+
+```yaml
+# .github/project-label-sync.yml
+project-url: https://github.com/users/yourname/projects/1
+field: Status  # optional, defaults to "Status"
+mapping:
+  "In Progress":
+    - in-progress
+  "In Review":
+    - in-review
+  Done:
+    - done
+  # Backlog is intentionally omitted — no label sync for it
+```
+
+The mapping is a map of project field values to lists of label names. Quoted keys are needed for values with spaces. Statuses omitted from the mapping are silently ignored.
+
+A status value can map to multiple labels:
+
+```yaml
+mapping:
+  "In Progress":
+    - in-progress
+    - active
+```
+
+### 2. Create a workflow
+
 ```yaml
 name: Sync Project Labels
 on:
@@ -15,35 +46,40 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: dvhthomas/project-label-sync@main
         with:
-          project-url: 'https://github.com/users/yourname/projects/1'
           token: ${{ secrets.PROJECT_PAT }}
-          field: Status
-          mapping: |
-            In Progress: in-progress
-            In Review: in-review
-            Done: done
           dry-run: 'false'
 ```
 
-In this example, "Backlog" is intentionally omitted from the mapping -- issues with that board status are ignored entirely (no label added, no sync attempted).
+The `actions/checkout` step is required so the config file is available in the workspace.
 
-A status value can map to multiple labels (comma-separated):
+To use a non-default config path:
+
 ```yaml
-mapping: |
-  In Progress: in-progress, active
+      - uses: dvhthomas/project-label-sync@main
+        with:
+          token: ${{ secrets.PROJECT_PAT }}
+          config: 'path/to/my-config.yml'
+          dry-run: 'false'
 ```
 
 ## Inputs
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `project-url` | Yes | | GitHub Projects v2 URL (user or org) |
 | `token` | Yes | | Classic PAT with `project` + `repo` scopes |
-| `field` | No | `Status` | Project field name to sync |
-| `mapping` | Yes | | YAML mapping of field values to label names (one per line, `FieldValue: label-name`) |
+| `config` | No | `.github/project-label-sync.yml` | Path to YAML config file |
 | `dry-run` | No | `true` | Log changes without applying them |
+
+## Config file
+
+| Key | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `project-url` | Yes | | GitHub Projects v2 URL (user or org) |
+| `field` | No | `Status` | Project field name to sync |
+| `mapping` | Yes | | Map of field values to label name lists |
 
 ## How it works
 
@@ -58,13 +94,16 @@ mapping: |
 
 ### Label naming
 
-Labels are explicitly mapped from board status values:
+Labels are explicitly mapped from board status values in the config file:
 
 ```yaml
-mapping: |
-  Todo: todo
-  In Progress: in-progress
-  Done: done
+mapping:
+  Todo:
+    - todo
+  "In Progress":
+    - in-progress
+  Done:
+    - done
 ```
 
 | Board Status | Label |

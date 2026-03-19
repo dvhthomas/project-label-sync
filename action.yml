@@ -4,19 +4,13 @@ branding:
   icon: 'refresh-cw'
   color: 'blue'
 inputs:
-  project-url:
-    description: 'GitHub Projects v2 URL (e.g., https://github.com/users/yourname/projects/1)'
-    required: true
   token:
     description: 'Classic PAT with project + repo scopes (GITHUB_TOKEN cannot access projects)'
     required: true
-  field:
-    description: 'Project field name to sync (default: Status)'
+  config:
+    description: 'Path to config file'
     required: false
-    default: 'Status'
-  mapping:
-    description: 'YAML mapping of field values to label names (one per line, "FieldValue: label-name")'
-    required: true
+    default: '.github/project-label-sync.yml'
   dry-run:
     description: 'Log what would change without making mutations'
     required: false

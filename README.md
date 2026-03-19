@@ -59,7 +59,7 @@ mapping:
     - shipped
 ```
 
-A status can map to multiple labels, and labels can contain spaces or special characters (just quote them in YAML). See the [examples](examples/) directory for more.
+A status can map to multiple labels. When you drag an issue into that column, **all** the listed labels are applied. When the issue moves to a different status, all of them are removed and replaced with the new status's labels. Labels can contain spaces or special characters — just quote them in YAML. See the [examples](examples/) directory for more.
 
 ### 2. Create a personal access token
 

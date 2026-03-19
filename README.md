@@ -162,6 +162,30 @@ mapping:
     - "Done & Shipped"
 ```
 
+### Real-world example: GitHub Public Roadmap
+
+The [GitHub Public Roadmap](https://github.com/orgs/github/projects/4247) uses a **Release Phase** field (not Status) with values `GA` and `Public Preview`. They also use labels like `exploring`, `in design`, `preview`, `shipped`, and `ga` for lifecycle stages.
+
+A sync config for this project would target the Release Phase field and map each phase to multiple existing labels:
+
+```yaml
+project-url: https://github.com/orgs/github/projects/4247
+field: Release Phase
+mapping:
+  "Public Preview":
+    - preview
+    - "Public Preview"
+  GA:
+    - ga
+    - shipped
+```
+
+This shows several features working together:
+- Custom field name (`Release Phase` instead of the default `Status`)
+- Multiple labels per status (`GA` syncs both `ga` and `shipped`)
+- Labels with spaces (`"Public Preview"`)
+- Unmapped lifecycle labels (`exploring`, `in design`) are left untouched
+
 Labels are auto-created with a neutral gray color (`#ededed`) on first sync.
 
 ## How It Works
@@ -305,12 +329,13 @@ mapping:
 
 Many projects don't use "Todo/In Progress/Done". Real examples:
 
-| Project | Status options |
-|---------|---------------|
-| GitHub Roadmap | Q3 2025, Q4 2025, Q1 2026, Future |
-| Kubernetes 1.36 | At risk for code freeze, Tracked for PRR freeze, Deferred, ... (14 options) |
-| grafana/k6 roadmap | Short term, Mid term, Long term, Released |
-| CalcMark | Backlog, Ready, In progress, In review, Done |
+| Project | Field | Options |
+|---------|-------|---------|
+| GitHub Roadmap | Status | Q3 2025, Q4 2025, Q1 2026, Future |
+| GitHub Roadmap | Release Phase | GA, Public Preview |
+| Kubernetes 1.36 | Status | At risk for code freeze, Tracked for PRR freeze, Deferred, ... (14 options) |
+| grafana/k6 roadmap | Status | Short term, Mid term, Long term, Released |
+| CalcMark | Status | Backlog, Ready, In progress, In review, Done |
 
 **Tip:** Run the tool with any config to see your project's actual options. The startup output always shows them:
 

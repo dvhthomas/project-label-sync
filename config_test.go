@@ -108,6 +108,32 @@ mapping:
 				}
 			},
 		},
+		{
+			name: "labels with spaces",
+			content: `project-url: https://github.com/orgs/myorg/projects/1
+mapping:
+  "In Progress":
+    - "In Progress"
+  "In Review":
+    - "Code Review"
+  Done:
+    - "Done & Shipped"
+`,
+			check: func(t *testing.T, cfg *Config) {
+				labels := cfg.Mapping["In Progress"]
+				if len(labels) != 1 || labels[0] != "In Progress" {
+					t.Errorf("expected [In Progress], got %v", labels)
+				}
+				labels = cfg.Mapping["In Review"]
+				if len(labels) != 1 || labels[0] != "Code Review" {
+					t.Errorf("expected [Code Review], got %v", labels)
+				}
+				labels = cfg.Mapping["Done"]
+				if len(labels) != 1 || labels[0] != "Done & Shipped" {
+					t.Errorf("expected [Done & Shipped], got %v", labels)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

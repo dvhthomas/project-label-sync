@@ -667,3 +667,71 @@ func TestLatestLabelTime(t *testing.T) {
 		t.Errorf("got %v, want zero time", got)
 	}
 }
+
+func TestReconcile_LabelsWithSpaces(t *testing.T) {
+	now := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
+
+	project := &gh.ProjectInfo{
+		ID:      "PVT_test",
+		Title:   "Test",
+		FieldID: "PVTSSF_test",
+		Options: []gh.StatusOption{
+			{ID: "opt1", Name: "In Progress"},
+			{ID: "opt2", Name: "Done"},
+		},
+	}
+
+	mapping := map[string][]string{
+		"In Progress": {"In Progress"},     // label has space, same as status
+		"Done":        {"Done & Shipped"},   // label has space and special char
+	}
+
+	syncer, err := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "owner", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("board wins adds label with space", func(t *testing.T) {
+		item := gh.ProjectItem{
+			ItemID:      "item1",
+			UpdatedAt:   now,
+			BoardStatus: "In Progress",
+			IssueNumber: 1,
+			IssueState:  "OPEN",
+			RepoOwner:   "owner",
+			RepoName:    "repo",
+			Labels:      []string{"bug"},
+			LabelEvents: map[string]time.Time{},
+		}
+		actions := syncer.Reconcile(item)
+		if len(actions) != 1 {
+			t.Fatalf("got %d actions, want 1", len(actions))
+		}
+		if actions[0].Type != ActionAddLabel {
+			t.Errorf("got %s, want add-label", actions[0].Type)
+		}
+		if actions[0].Label != "In Progress" {
+			t.Errorf("label: got %q, want %q", actions[0].Label, "In Progress")
+		}
+	})
+
+	t.Run("in sync with spaced label", func(t *testing.T) {
+		item := gh.ProjectItem{
+			ItemID:      "item2",
+			UpdatedAt:   now,
+			BoardStatus: "Done",
+			IssueNumber: 2,
+			IssueState:  "OPEN",
+			RepoOwner:   "owner",
+			RepoName:    "repo",
+			Labels:      []string{"Done & Shipped"},
+			LabelEvents: map[string]time.Time{
+				"Done & Shipped": now,
+			},
+		}
+		actions := syncer.Reconcile(item)
+		if len(actions) != 1 || actions[0].Type != ActionSkip {
+			t.Errorf("expected skip (in sync), got %v", actions)
+		}
+	})
+}

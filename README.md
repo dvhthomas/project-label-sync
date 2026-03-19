@@ -150,6 +150,18 @@ mapping:
     - active
 ```
 
+Labels can have spaces and special characters — just quote them:
+
+```yaml
+mapping:
+  "In Progress":
+    - "In Progress"
+  "Code Review":
+    - "Needs Review"
+  Done:
+    - "Done & Shipped"
+```
+
 Labels are auto-created with a neutral gray color (`#ededed`) on first sync.
 
 ## How It Works

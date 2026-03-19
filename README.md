@@ -69,6 +69,10 @@ Create one here: https://github.com/settings/tokens/new?scopes=project,repo&desc
 
 Add it as a repository secret named `PROJECT_PAT`.
 
+> [!IMPORTANT]
+> The token owner must have **write access to every repo** that has issues on the project board. Org-level project boards often span multiple repos — for example, an issue from `myorg/frontend` and another from `myorg/api` on the same board. The `repo` scope on the PAT grants access to all repos the user can access, but the user must actually be a collaborator or team member on each repo. If the token can't write to a particular repo, label sync will fail for issues in that repo (other repos still sync normally).
+
+> [!NOTE]
 > Fine-grained PATs do not support the Projects v2 GraphQL API. You must use a classic token.
 
 ### 3. Preview before you commit

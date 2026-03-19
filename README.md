@@ -137,7 +137,16 @@ name: Sync Project Labels
 on:
   schedule:
     - cron: '*/15 * * * *'   # every 15 minutes
-  workflow_dispatch:          # manual trigger from the Actions tab
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Apply changes (false = preview only)'
+        type: boolean
+        default: false
+      verbose:
+        description: 'Show per-issue detail'
+        type: boolean
+        default: false
 
 jobs:
   sync:
@@ -147,19 +156,24 @@ jobs:
       - uses: dvhthomas/project-label-sync@v0.1.2
         with:
           token: ${{ secrets.PROJECT_PAT }}
+          apply: ${{ github.event.inputs.apply || 'false' }}
+          verbose: ${{ github.event.inputs.verbose || 'false' }}
 ```
 
-Commit this, then go to the Actions tab and click "Run workflow." Check the log output — it shows exactly what would change. The `actions/checkout` step is required so the config file is available.
+Commit this, then go to the Actions tab and click **"Run workflow."** You'll see dropdowns for `apply` and `verbose` — leave both unchecked for a preview run. Check the log output to see what would change. The `actions/checkout` step is required so the config file is available.
 
 ### 5. Enable apply
 
-When the preview looks right, add `apply: true` to the workflow:
+When the preview looks right, either:
+
+- **From the Actions UI:** Check the `apply` box and run again
+- **For scheduled runs:** Change the default to `true` so the cron job applies changes automatically:
 
 ```yaml
-      - uses: dvhthomas/project-label-sync@v0.1.2
-        with:
-          token: ${{ secrets.PROJECT_PAT }}
-          apply: true
+      apply:
+        description: 'Apply changes (false = preview only)'
+        type: boolean
+        default: true     # scheduled runs apply; manual runs still show the checkbox
 ```
 
 Or from the CLI:

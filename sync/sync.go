@@ -70,7 +70,8 @@ type Syncer struct {
 	Board           BoardUpdater
 	Mapping         map[string][]string // field value -> labels
 	ReverseMap      map[string]string   // label -> field value
-	AllMappedLabels []string            // flat list of all mapped labels
+	AllMappedLabels []string            // flat list of all mapped labels (unique)
+	AmbiguousLabels []string            // labels that map to multiple statuses
 	FieldName       string
 	DryRun          bool
 	Verbose         bool
@@ -94,13 +95,23 @@ func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels LabelSyncer, b
 
 	reverseMap := make(map[string]string)
 	var allLabels []string
+	var ambiguousLabels []string
 	for fieldValue, lbls := range mapping {
 		for _, l := range lbls {
+			if existing, ok := reverseMap[l]; ok && existing != fieldValue {
+				ambiguousLabels = append(ambiguousLabels, l)
+			}
 			reverseMap[l] = fieldValue
 			allLabels = append(allLabels, l)
 		}
 	}
+	allLabels = uniqueStrings(allLabels)
 	sort.Strings(allLabels)
+	sort.Strings(ambiguousLabels)
+
+	if len(ambiguousLabels) > 0 {
+		applog.Warn("label(s) %v map to multiple statuses — label→board sync disabled for these (board→label still works)", ambiguousLabels)
+	}
 
 	return &Syncer{
 		Project:         project,
@@ -110,6 +121,7 @@ func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels LabelSyncer, b
 		Mapping:         mapping,
 		ReverseMap:      reverseMap,
 		AllMappedLabels: allLabels,
+		AmbiguousLabels: ambiguousLabels,
 		FieldName:       fieldName,
 		DryRun:          dryRun,
 		ProjectOwner:    projectOwner,
@@ -395,6 +407,17 @@ func (s *Syncer) Reconcile(item gh.ProjectItem) []Action {
 
 	if labelTime.After(boardTime) {
 		// Labels win → update board to match the label status.
+		// But if any current label is ambiguous, skip the board update.
+		for _, l := range currentMappedLabels {
+			if contains(s.AmbiguousLabels, l) {
+				return []Action{{
+					Type:        ActionSkip,
+					IssueNumber: num,
+					Repo:        repo,
+					Detail:      fmt.Sprintf("label %q maps to multiple statuses; skipping board update (board→label sync still works)", l),
+				}}
+			}
+		}
 		return []Action{{
 			Type:        ActionUpdateBoard,
 			IssueNumber: num,
@@ -537,4 +560,27 @@ func filterToMapped(labels []string, allMappedLabels []string) []string {
 		}
 	}
 	return result
+}
+
+// uniqueStrings returns a deduplicated copy of s, preserving first-occurrence order.
+func uniqueStrings(s []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, v := range s {
+		if !seen[v] {
+			seen[v] = true
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+// contains reports whether s contains v.
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }

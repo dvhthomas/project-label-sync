@@ -587,6 +587,117 @@ func TestValidateMapping_CaseSensitive(t *testing.T) {
 	}
 }
 
+func TestManyToOneMapping(t *testing.T) {
+	now := time.Date(2026, 3, 19, 12, 0, 0, 0, time.UTC)
+	earlier := now.Add(-1 * time.Hour)
+	later := now.Add(1 * time.Hour)
+
+	project := &gh.ProjectInfo{
+		ID:      "PVT_test",
+		Title:   "Test Project",
+		FieldID: "PVTSSF_test",
+		Options: []gh.StatusOption{
+			{ID: "opt1", Name: "Ready"},
+			{ID: "opt2", Name: "In Progress"},
+			{ID: "opt3", Name: "In Review"},
+			{ID: "opt4", Name: "Done"},
+		},
+	}
+
+	// "Ready" and "In Progress" both map to "in-progress" — many-to-one.
+	mapping := map[string][]string{
+		"Ready":       {"in-progress"},
+		"In Progress": {"in-progress"},
+		"In Review":   {"in-review"},
+		"Done":        {"done"},
+	}
+
+	syncer := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "testowner", 1)
+
+	t.Run("AllMappedLabels has no duplicates", func(t *testing.T) {
+		seen := make(map[string]bool)
+		for _, l := range syncer.AllMappedLabels {
+			if seen[l] {
+				t.Errorf("duplicate label in AllMappedLabels: %q", l)
+			}
+			seen[l] = true
+		}
+	})
+
+	t.Run("ambiguous label detected", func(t *testing.T) {
+		if len(syncer.AmbiguousLabels) == 0 {
+			t.Fatal("expected AmbiguousLabels to be non-empty")
+		}
+		found := false
+		for _, l := range syncer.AmbiguousLabels {
+			if l == "in-progress" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected 'in-progress' in AmbiguousLabels, got %v", syncer.AmbiguousLabels)
+		}
+	})
+
+	t.Run("ambiguous label skips board update", func(t *testing.T) {
+		// Issue has "in-progress" label (ambiguous), board says "Done".
+		// Label is newer, so normally it would update board to match the label's status.
+		// But since "in-progress" is ambiguous (maps to both Ready and In Progress),
+		// we don't know which status to set, so we skip.
+		item := gh.ProjectItem{
+			ItemID:      "item1",
+			UpdatedAt:   earlier,
+			BoardStatus: "Done",
+			IssueNumber: 1,
+			IssueState:  "OPEN",
+			RepoOwner:   "owner",
+			RepoName:    "repo",
+			Labels:      []string{"in-progress"},
+			LabelEvents: map[string]time.Time{
+				"in-progress": later,
+			},
+		}
+		actions := syncer.Reconcile(item)
+		if len(actions) != 1 {
+			t.Fatalf("got %d actions, want 1; actions: %v", len(actions), actions)
+		}
+		if actions[0].Type != ActionSkip {
+			t.Errorf("got action type %s, want skip; detail: %s", actions[0].Type, actions[0].Detail)
+		}
+		if !strings.Contains(actions[0].Detail, "maps to multiple statuses") {
+			t.Errorf("unexpected detail: %s", actions[0].Detail)
+		}
+	})
+
+	t.Run("non-ambiguous label still updates board", func(t *testing.T) {
+		// Issue has "in-review" label (only "In Review" maps to it), board says "Ready".
+		// Label is newer → should update board normally.
+		item := gh.ProjectItem{
+			ItemID:      "item2",
+			UpdatedAt:   earlier,
+			BoardStatus: "Ready",
+			IssueNumber: 2,
+			IssueState:  "OPEN",
+			RepoOwner:   "owner",
+			RepoName:    "repo",
+			Labels:      []string{"in-review"},
+			LabelEvents: map[string]time.Time{
+				"in-review": later,
+			},
+		}
+		actions := syncer.Reconcile(item)
+		if len(actions) != 1 {
+			t.Fatalf("got %d actions, want 1", len(actions))
+		}
+		if actions[0].Type != ActionUpdateBoard {
+			t.Errorf("got action type %s, want update-board", actions[0].Type)
+		}
+		if actions[0].StatusName != "In Review" {
+			t.Errorf("got status %q, want %q", actions[0].StatusName, "In Review")
+		}
+	})
+}
+
 func TestLatestLabelTime(t *testing.T) {
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)

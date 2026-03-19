@@ -3,8 +3,8 @@
 //
 // CLI usage:
 //
-//	go run . --token ghp_... --config .github/project-label-sync.yml
-//	go run . --token ghp_... --config .github/project-label-sync.yml --apply
+//	go run . --token ghp_... --config project-label-sync.yml
+//	go run . --token ghp_... --config project-label-sync.yml --apply
 package main
 
 import (
@@ -39,7 +39,7 @@ func run() error {
 		verboseFlag bool
 	)
 	flag.StringVar(&tokenFlag, "token", "", "GitHub PAT with project + repo scopes")
-	flag.StringVar(&configFlag, "config", ".github/project-label-sync.yml", "Path to config file")
+	flag.StringVar(&configFlag, "config", "project-label-sync.yml", "Path to config file")
 	flag.BoolVar(&applyFlag, "apply", false, "Apply changes (without this flag, only previews)")
 	flag.BoolVar(&verboseFlag, "verbose", false, "Log every per-issue action (default: summary only)")
 	flag.Parse()
@@ -50,10 +50,10 @@ func run() error {
 	apply := applyFlag || actionInput("APPLY") == "true"
 	verbose := verboseFlag || actionInput("VERBOSE") == "true"
 
-	if configPath == "" || configPath == ".github/project-label-sync.yml" {
+	if configPath == "" || configPath == "project-label-sync.yml" {
 		// Check if the default exists; if not and a flag wasn't explicitly set, error clearly.
-		if _, err := os.Stat(configPath); os.IsNotExist(err) && configFlag == ".github/project-label-sync.yml" {
-			configPath = ".github/project-label-sync.yml"
+		if _, err := os.Stat(configPath); os.IsNotExist(err) && configFlag == "project-label-sync.yml" {
+			configPath = "project-label-sync.yml"
 		}
 	}
 

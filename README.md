@@ -26,7 +26,7 @@ It runs on a schedule via GitHub Actions, or locally from the command line. It n
 
 ### 1. Create a config file
 
-Add `.github/project-label-sync.yml` to your repo. The config tells the tool which project board to watch and how to map each status to one or more labels:
+Add `project-label-sync.yml` to your repo. The config tells the tool which project board to watch and how to map each status to one or more labels:
 
 ```yaml
 project-url: https://github.com/orgs/myorg/projects/1
@@ -80,7 +80,7 @@ Before enabling automation, run a preview to see what the tool would do. No issu
 go install github.com/dvhthomas/project-label-sync@latest
 
 # Preview
-project-label-sync --token ghp_... --config .github/project-label-sync.yml
+project-label-sync --token ghp_... --config project-label-sync.yml
 ```
 
 The output shows your configuration, which labels exist or would be created, and what would change on each issue:
@@ -120,7 +120,7 @@ Add `--verbose` to see the per-issue detail.
 When the preview looks right, add `--apply`:
 
 ```sh
-project-label-sync --token ghp_... --config .github/project-label-sync.yml --apply
+project-label-sync --token ghp_... --config project-label-sync.yml --apply
 ```
 
 ### 5. Automate with GitHub Actions

@@ -1,4 +1,4 @@
-# .github/project-label-sync.yml
+# project-label-sync.yml
 project-url: https://github.com/users/dvhthomas/projects/1
 field: Status  # optional, defaults to "Status"
 mapping:

@@ -194,38 +194,125 @@ lifecycle:
 
 ## Troubleshooting
 
+### Config file not found
+
+```
+$ project-label-sync --config oops.yml
+ERROR: config file not found: oops.yml
+
+Create one with:
+
+  project-url: https://github.com/users/YOURNAME/projects/1
+  field: Status
+  mapping:
+    "In Progress":
+      - in-progress
+```
+
+**Fix:** Create the config file. The default location is `.github/project-label-sync.yml`.
+
+### Missing token
+
+```
+$ project-label-sync --config .github/project-label-sync.yml
+ERROR: token is required
+
+Pass a classic PAT with 'project' and 'repo' scopes:
+  --token ghp_...
+  or set GH_TOKEN=ghp_...
+
+Create one at: https://github.com/settings/tokens/new?scopes=project,repo&description=project-label-sync
+```
+
+**Fix:** Create a classic PAT (not fine-grained) with `project` and `repo` scopes. Pass it via `--token` or `GH_TOKEN`.
+
 ### Wrong field name
 
 ```
 $ project-label-sync --config my-config.yml
-ERROR: resolve project: GraphQL error: Could not resolve to a ... with the name Priority
+ERROR: project has no single-select field named "Priority"
+
+Check the field name in your project settings (field names are case-sensitive).
+The default is "Status". Your config has: field: Priority
 ```
 
-**Fix:** Check your `field:` value. The default is `Status`. Run without a mapping first to see the available fields.
+**Fix:** The `field:` in your config doesn't match any single-select field on the project. Most projects use `Status` (the default). Check your project's field names in the project settings.
 
 ### Typo in status value
 
 ```
-ERROR: mapping contains "In Progress" but the project's Status field has no such option
-ERROR: Available options: Long term, Mid term, Released, Short term
-ERROR: 3 mapping value(s) do not match any project field option — check spelling and capitalization
+$ project-label-sync --config my-config.yml
+Project: eBPF for Windows Triage (3 Status options: Todo, In Progress, Done)
+
+WARNING: project status "Todo" is not mapped (will be ignored)
+WARNING: project status "In Progress" is not mapped (will be ignored)
+WARNING: project status "Done" is not mapped (will be ignored)
+ERROR: mapping contains "Doen" but the project's Status field has no such option
+ERROR: mapping contains "In Progres" but the project's Status field has no such option
+ERROR: Available options: Done, In Progress, Todo
+ERROR: config has 2 invalid mapping value(s)
+
+The mapping keys must exactly match your project's Status field options (case-sensitive).
+Copy the exact names from the 'Available options' list above into your config.
 ```
 
-**Fix:** Copy the exact status names from the "Available options" line into your config. They are case-sensitive.
+**Fix:** The mapping keys must match exactly (case-sensitive). Copy the names from the "Available options" line into your config.
+
+### Case sensitivity
+
+`"In Progress"` and `"In progress"` are different. The tool tells you the exact names:
+
+```
+Project: CalcMark Tracker (5 Status options: Backlog, Ready, In progress, In review, Done)
+```
+
+Use `"In progress"` (lowercase p), not `"In Progress"`.
+
+### Duplicate labels across statuses
+
+```
+$ project-label-sync --config my-config.yml
+ERROR: config error: the same label cannot be used for multiple statuses
+
+  "in-progress" is used by statuses: "Ready", "In progress"
+
+each status must map to unique labels so the sync can distinguish them
+```
+
+**Fix:** Each status must map to a unique set of labels. If "Ready" and "In Progress" both map to `in-progress`, the tool can't tell them apart and would corrupt your data. Give each status its own label:
+
+```yaml
+mapping:
+  Ready:
+    - ready
+  "In progress":
+    - in-progress
+```
 
 ### Non-standard status names
 
-Many projects don't use "Todo/In Progress/Done". Examples from real projects:
+Many projects don't use "Todo/In Progress/Done". Real examples:
 
-- **GitHub Roadmap:** quarterly labels (`Q1 2026`, `Q2 2026`, `Future`)
-- **Kubernetes:** freeze tracking (`At risk for code freeze`, `Tracked for PRR freeze`)
-- **grafana/k6:** timeline-based (`Short term`, `Mid term`, `Long term`)
+| Project | Status options |
+|---------|---------------|
+| GitHub Roadmap | Q3 2025, Q4 2025, Q1 2026, Future |
+| Kubernetes 1.36 | At risk for code freeze, Tracked for PRR freeze, Deferred, ... (14 options) |
+| grafana/k6 roadmap | Short term, Mid term, Long term, Released |
+| CalcMark | Backlog, Ready, In progress, In review, Done |
 
-**Tip:** Run the tool first with a dummy mapping to see what options your project actually has. The startup output shows all available options:
+**Tip:** Run the tool with any config to see your project's actual options. The startup output always shows them:
 
 ```
 Project: my-project (4 Status options: Short term, Mid term, Long term, Released)
 ```
+
+### Unmapped statuses (not an error)
+
+```
+WARNING: project status "Backlog" is not mapped (will be ignored)
+```
+
+This is informational — issues in "Backlog" won't get any labels. This is usually intentional (you only want labels for active work stages). To include it, add it to your mapping.
 
 ## Limitations
 

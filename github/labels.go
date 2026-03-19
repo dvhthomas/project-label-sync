@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	applog "github.com/dvhthomas/project-label-sync/internal/log"
 )
 
 // LabelManager handles label operations via the GitHub REST API.
@@ -31,7 +32,7 @@ func NewLabelManager(httpClient *http.Client, token string, dryRun bool) *LabelM
 func (m *LabelManager) EnsureLabelExists(ctx context.Context, repo, labelName string) error {
 	return withRetry(ctx, "ensure-label-"+labelName, 3, func() error {
 		if m.DryRun {
-			log.Printf("[preview] Would ensure label %q exists on %s", labelName, repo)
+			applog.Preview("Would ensure label %q exists on %s", labelName, repo)
 			return nil
 		}
 
@@ -66,7 +67,7 @@ func (m *LabelManager) EnsureLabelExists(ctx context.Context, repo, labelName st
 
 		// 201 Created = success, 422 with "already_exists" = also success.
 		if resp.StatusCode == http.StatusCreated {
-			log.Printf("::notice::Created label %q on %s", labelName, repo)
+			applog.Notice("Created label %q on %s", labelName, repo)
 			return nil
 		}
 
@@ -88,7 +89,7 @@ func (m *LabelManager) EnsureLabelExists(ctx context.Context, repo, labelName st
 func (m *LabelManager) AddLabel(ctx context.Context, repo string, issueNumber int, labelName string) error {
 	return withRetry(ctx, "add-label-"+labelName, 3, func() error {
 		if m.DryRun {
-			log.Printf("[preview] Would add label %q to %s#%d", labelName, repo, issueNumber)
+			applog.Preview("Would add label %q to %s#%d", labelName, repo, issueNumber)
 			return nil
 		}
 
@@ -121,7 +122,7 @@ func (m *LabelManager) AddLabel(ctx context.Context, repo string, issueNumber in
 		}
 
 		if resp.StatusCode == http.StatusOK {
-			log.Printf("::notice::Added label %q to %s#%d", labelName, repo, issueNumber)
+			applog.Notice("Added label %q to %s#%d", labelName, repo, issueNumber)
 			return nil
 		}
 
@@ -138,7 +139,7 @@ func (m *LabelManager) AddLabel(ctx context.Context, repo string, issueNumber in
 func (m *LabelManager) RemoveLabel(ctx context.Context, repo string, issueNumber int, labelName string) error {
 	return withRetry(ctx, "remove-label-"+labelName, 3, func() error {
 		if m.DryRun {
-			log.Printf("[preview] Would remove label %q from %s#%d", labelName, repo, issueNumber)
+			applog.Preview("Would remove label %q from %s#%d", labelName, repo, issueNumber)
 			return nil
 		}
 
@@ -166,7 +167,7 @@ func (m *LabelManager) RemoveLabel(ctx context.Context, repo string, issueNumber
 		// 200 OK or 204 No Content = success, 404 = already removed.
 		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotFound {
 			if resp.StatusCode != http.StatusNotFound {
-				log.Printf("::notice::Removed label %q from %s#%d", labelName, repo, issueNumber)
+				applog.Notice("Removed label %q from %s#%d", labelName, repo, issueNumber)
 			}
 			return nil
 		}

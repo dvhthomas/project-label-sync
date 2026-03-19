@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	applog "github.com/dvhthomas/project-label-sync/internal/log"
 )
 
 // DefaultMaxPoints is the default GraphQL point budget before aborting.
@@ -198,7 +199,7 @@ func withRetry(ctx context.Context, name string, maxAttempts int, fn func() erro
 			if re.retryAfter > backoff {
 				backoff = re.retryAfter
 			}
-			log.Printf("::warning::%s failed (attempt %d/%d): %v, retrying in %v", name, attempt, maxAttempts, lastErr, backoff)
+			applog.Warn("%s failed (attempt %d/%d): %v, retrying in %v", name, attempt, maxAttempts, lastErr, backoff)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()

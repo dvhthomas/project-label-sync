@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	applog "github.com/dvhthomas/project-label-sync/internal/log"
 )
 
 // SearchResult represents a single issue returned by the GitHub Search API.
@@ -52,7 +53,7 @@ func (c *Client) SearchOpenIssuesInProject(ctx context.Context, projectOwner str
 	for {
 		// Throttle between search API pages (30 req/min limit).
 		if page > 1 {
-			log.Printf("::notice::Search throttle: waiting 2s before page %d", page)
+			applog.Notice("Search throttle: waiting 2s before page %d", page)
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -142,7 +143,7 @@ func (c *Client) SearchOpenIssuesInProject(ctx context.Context, projectOwner str
 		page++
 	}
 
-	log.Printf("::notice::Search found %d open issues across %d pages", len(allResults), page)
+	applog.Notice("Search found %d open issues across %d pages", len(allResults), page)
 	return allResults, nil
 }
 

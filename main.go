@@ -1,9 +1,15 @@
-// project-label-sync is a GitHub Action that bidirectionally syncs
-// GitHub Projects v2 status fields with issue labels.
+// project-label-sync bidirectionally syncs GitHub Projects v2 status
+// fields with issue labels. Runs as a GitHub Action or standalone CLI.
+//
+// CLI usage:
+//
+//	go run . --token ghp_... --config .github/project-label-sync.yml
+//	go run . --token ghp_... --config .github/project-label-sync.yml --apply
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -11,27 +17,45 @@ import (
 	"strings"
 
 	gh "github.com/dvhthomas/project-label-sync/github"
+	applog "github.com/dvhthomas/project-label-sync/internal/log"
 	"github.com/dvhthomas/project-label-sync/sync"
 )
 
 func main() {
-	log.SetFlags(0) // GitHub Actions already provides timestamps.
+	log.SetFlags(0)
 
 	if err := run(); err != nil {
-		log.Fatalf("::error::%v", err)
+		applog.Error("%v", err)
+		os.Exit(1)
 	}
 }
 
 func run() error {
-	token := getInput("TOKEN")
-	configPath := getInput("CONFIG")
-	apply := getInput("APPLY") == "true"
+	// CLI flags (primary interface for local use).
+	var (
+		tokenFlag  string
+		configFlag string
+		applyFlag  bool
+	)
+	flag.StringVar(&tokenFlag, "token", "", "GitHub PAT with project + repo scopes")
+	flag.StringVar(&configFlag, "config", ".github/project-label-sync.yml", "Path to config file")
+	flag.BoolVar(&applyFlag, "apply", false, "Apply changes (without this flag, only previews)")
+	flag.Parse()
+
+	// Fall back to GitHub Actions inputs if flags aren't set.
+	token := firstNonEmpty(tokenFlag, actionInput("TOKEN"), os.Getenv("GH_TOKEN"))
+	configPath := firstNonEmpty(configFlag, actionInput("CONFIG"))
+	apply := applyFlag || actionInput("APPLY") == "true"
+
+	if configPath == "" || configPath == ".github/project-label-sync.yml" {
+		// Check if the default exists; if not and a flag wasn't explicitly set, error clearly.
+		if _, err := os.Stat(configPath); os.IsNotExist(err) && configFlag == ".github/project-label-sync.yml" {
+			configPath = ".github/project-label-sync.yml"
+		}
+	}
 
 	if token == "" {
-		return fmt.Errorf("input token is required")
-	}
-	if configPath == "" {
-		configPath = ".github/project-label-sync.yml"
+		return fmt.Errorf("token is required: pass --token or set GH_TOKEN")
 	}
 
 	cfg, err := loadConfig(configPath)
@@ -40,12 +64,11 @@ func run() error {
 	}
 
 	if apply {
-		log.Println("::notice::APPLY mode — changes will be written to GitHub.")
+		applog.Notice("APPLY mode — changes will be written to GitHub.")
 	} else {
-		log.Println("::notice::Preview mode — showing what would change. Pass apply: true to write changes.")
+		applog.Notice("Preview mode — showing what would change. Pass --apply to write changes.")
 	}
 
-	// Parse project URL to extract owner and number for search queries.
 	_, projectOwner, projectNumber, err := gh.ParseProjectURL(cfg.ProjectURL)
 	if err != nil {
 		return fmt.Errorf("parse project URL: %w", err)
@@ -54,17 +77,15 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	// Resolve the project.
 	client := gh.NewClient(token)
 	project, err := client.ResolveProject(ctx, cfg.ProjectURL, cfg.Field)
 	if err != nil {
 		return fmt.Errorf("resolve project: %w", err)
 	}
 
-	log.Printf("::notice::Project: %s (%d %s options: %s)",
+	applog.Notice("Project: %s (%d %s options: %s)",
 		project.Title, len(project.Options), cfg.Field, formatOptions(project.Options))
 
-	// Run sync.
 	labels := gh.NewLabelManager(client.HTTPClient, token, !apply)
 	syncer := sync.NewSyncer(project, client, labels, cfg.Mapping, cfg.Field, !apply, projectOwner, projectNumber)
 	syncer.ProjectURL = cfg.ProjectURL
@@ -72,12 +93,19 @@ func run() error {
 	return syncer.Run(ctx)
 }
 
-// getInput reads a GitHub Actions input from the environment.
-// GitHub Actions sets INPUT_<NAME> with hyphens preserved in uppercase.
-func getInput(name string) string {
-	// GitHub Actions converts input names to uppercase and prefixes with INPUT_.
-	envKey := "INPUT_" + strings.ToUpper(name)
-	return strings.TrimSpace(os.Getenv(envKey))
+// actionInput reads a GitHub Actions input from the environment.
+func actionInput(name string) string {
+	return strings.TrimSpace(os.Getenv("INPUT_" + strings.ToUpper(name)))
+}
+
+// firstNonEmpty returns the first non-empty string.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func formatOptions(opts []gh.StatusOption) string {

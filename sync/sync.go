@@ -5,12 +5,12 @@ package sync
 import (
 	"context"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
 
 	gh "github.com/dvhthomas/project-label-sync/github"
+	applog "github.com/dvhthomas/project-label-sync/internal/log"
 )
 
 // MutationDelay is the pause between mutation API calls to avoid
@@ -142,7 +142,7 @@ func (s *Syncer) logConfigSummary() {
 		mappingLines = append(mappingLines, fmt.Sprintf("    %q → [%s]", k, strings.Join(s.Mapping[k], ", ")))
 	}
 
-	log.Printf("::notice::Configuration:\n  Project: %s\n  Field: %s\n  Mappings:\n%s\n  Mode: %s",
+	applog.Notice("Configuration:\n  Project: %s\n  Field: %s\n  Mappings:\n%s\n  Mode: %s",
 		projectRef, s.FieldName, strings.Join(mappingLines, "\n"), mode)
 }
 
@@ -151,7 +151,7 @@ func (s *Syncer) logLabelCheck(ctx context.Context, repos []string) {
 	for _, repo := range repos {
 		existing, missing, err := s.Labels.CheckLabelsExist(ctx, repo, s.AllMappedLabels)
 		if err != nil {
-			log.Printf("::warning::Label check on %s failed: %v", repo, err)
+			applog.Warn("Label check on %s failed: %v", repo, err)
 			continue
 		}
 
@@ -164,7 +164,7 @@ func (s *Syncer) logLabelCheck(ctx context.Context, repos []string) {
 		}
 		s.Stats.LabelsCreated = len(missing)
 
-		log.Printf("::notice::Label check on %s:\n%s", repo, strings.Join(lines, "\n"))
+		applog.Notice("Label check on %s:\n%s", repo, strings.Join(lines, "\n"))
 	}
 }
 
@@ -181,7 +181,7 @@ func (s *Syncer) logSummary() {
 		verbCreate = "Labels created"
 	}
 
-	log.Printf("::notice::Summary:\n  Issues scanned: %d\n  Already in sync: %d\n  %s: %d issues\n  %s: %d issues\n  %s: %d issues\n  %s: %d\n  Skipped (unmapped/closed): %d\n  Errors: %d",
+	applog.Notice("Summary:\n  Issues scanned: %d\n  Already in sync: %d\n  %s: %d issues\n  %s: %d issues\n  %s: %d issues\n  %s: %d\n  Skipped (unmapped/closed): %d\n  Errors: %d",
 		s.Stats.Scanned,
 		s.Stats.InSync,
 		verb, s.Stats.LabelsAdded,
@@ -247,7 +247,7 @@ func (s *Syncer) Run(ctx context.Context) error {
 
 			if execErr := s.Execute(ctx, item, a); execErr != nil {
 				s.Stats.Errors++
-				log.Printf("::error::Failed to execute %s on %s#%d: %v", a.Type, a.Repo, a.IssueNumber, execErr)
+				applog.Error("Failed to execute %s on %s#%d: %v", a.Type, a.Repo, a.IssueNumber, execErr)
 			} else {
 				switch a.Type {
 				case ActionAddLabel:
@@ -266,7 +266,7 @@ func (s *Syncer) Run(ctx context.Context) error {
 	s.Stats.BoardUpdated = len(issueBoards)
 
 	// Log API budget summary.
-	log.Printf("::notice::API budget: %d GraphQL points used, %d remaining",
+	applog.Notice("API budget: %d GraphQL points used, %d remaining",
 		s.Client.PointsUsed, s.Client.RateLimitRemaining())
 
 	// Log final summary.
@@ -401,7 +401,7 @@ func (s *Syncer) boardWins(num int, repo string, item gh.ProjectItem, currentMap
 
 // Execute performs a single action.
 func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error {
-	log.Printf("[%s] %s#%d: %s", a.Type, a.Repo, a.IssueNumber, a.Detail)
+	applog.Info("[%s] %s#%d: %s", a.Type, a.Repo, a.IssueNumber, a.Detail)
 
 	switch a.Type {
 	case ActionAddLabel:
@@ -419,7 +419,7 @@ func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error 
 			return fmt.Errorf("no board option found for status %q", a.StatusName)
 		}
 		if s.DryRun {
-			log.Printf("[preview] Would update board status to %q for item %s", a.StatusName, a.ItemID)
+			applog.Preview("Would update board status to %q for item %s", a.StatusName, a.ItemID)
 			return nil
 		}
 		return s.Client.UpdateItemStatus(ctx, s.Project.ID, a.ItemID, s.Project.FieldID, optionID)

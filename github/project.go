@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
+
+	applog "github.com/dvhthomas/project-label-sync/internal/log"
 )
 
 // ResolveProject looks up a Projects v2 board by URL and returns its
@@ -120,7 +121,7 @@ func (c *Client) ResolveProject(ctx context.Context, projectURL string, fieldNam
 		info.Options = append(info.Options, StatusOption{ID: opt.ID, Name: opt.Name})
 	}
 
-	log.Printf("::notice::Resolved project %q (ID: %s) with %d status options", info.Title, info.ID, len(info.Options))
+	applog.Notice("Resolved project %q (ID: %s) with %d status options", info.Title, info.ID, len(info.Options))
 	return info, nil
 }
 
@@ -246,7 +247,7 @@ func (c *Client) BatchFetchItemStatus(ctx context.Context, projectID string, iss
 		}
 
 		if err := json.Unmarshal(raw, &issue); err != nil {
-			log.Printf("::warning::Failed to unmarshal issue alias %s: %v", alias, err)
+			applog.Warn("Failed to unmarshal issue alias %s: %v", alias, err)
 			continue
 		}
 
@@ -307,7 +308,7 @@ func (c *Client) FetchSyncData(ctx context.Context, projectID, projectOwner stri
 	}
 
 	if len(searchResults) == 0 {
-		log.Printf("::notice::No open issues found in project %s/%d", projectOwner, projectNumber)
+		applog.Notice("No open issues found in project %s/%d", projectOwner, projectNumber)
 		return nil, nil
 	}
 
@@ -395,7 +396,7 @@ func (c *Client) FetchSyncData(ctx context.Context, projectID, projectOwner stri
 	if searchPages < 1 {
 		searchPages = 1
 	}
-	log.Printf("::notice::Fetched %d open issues via search (%d pages), enriched with %d GraphQL calls",
+	applog.Notice("Fetched %d open issues via search (%d pages), enriched with %d GraphQL calls",
 		len(items), searchPages, totalGraphQLCalls)
 	return items, nil
 }

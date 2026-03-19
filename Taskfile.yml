@@ -26,6 +26,8 @@ tasks:
 
   lint:
     desc: Run staticcheck
+    env:
+      GOTOOLCHAIN: auto
     cmds:
       - go run honnef.co/go/tools/cmd/staticcheck@latest ./...
 

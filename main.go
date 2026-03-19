@@ -66,7 +66,7 @@ func run() error {
 	if apply {
 		applog.Notice("APPLY mode — changes will be written to GitHub.")
 	} else {
-		applog.Notice("Preview mode — showing what would change. Pass --apply to write changes.")
+		applog.Notice("Preview mode — showing what would change. Use --apply to update issues.")
 	}
 
 	_, projectOwner, projectNumber, err := gh.ParseProjectURL(cfg.ProjectURL)

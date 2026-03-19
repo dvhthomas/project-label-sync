@@ -1,0 +1,11 @@
+# Label sync for dvhthomas/gh-velocity project board
+# Board: https://github.com/users/dvhthomas/projects/1
+project-url: https://github.com/users/dvhthomas/projects/1
+field: Status
+mapping:
+  "In progress":
+    - in-progress
+  "In review":
+    - in-review
+  Done:
+    - done

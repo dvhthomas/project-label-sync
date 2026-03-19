@@ -1,0 +1,11 @@
+# Label sync for Microsoft eBPF for Windows project board
+# Board: https://github.com/orgs/microsoft/projects/2098
+project-url: https://github.com/orgs/microsoft/projects/2098
+field: Status
+mapping:
+  "Todo":
+    - todo
+  "In Progress":
+    - in-progress
+  Done:
+    - done

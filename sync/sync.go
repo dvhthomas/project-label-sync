@@ -123,7 +123,7 @@ func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManag
 func (s *Syncer) logConfigSummary() {
 	mode := "LIVE"
 	if s.DryRun {
-		mode = "Preview (no mutations — pass apply: true to write changes)"
+		mode = "Preview (no changes made — use --apply to update issues)"
 	}
 
 	projectRef := s.Project.Title

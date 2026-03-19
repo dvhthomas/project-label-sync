@@ -75,23 +75,46 @@ Add it as a repository secret named `PROJECT_PAT`.
 > [!NOTE]
 > Fine-grained PATs do not support the Projects v2 GraphQL API. You must use a classic token.
 
-### 3. Preview before you commit
+### 3. Add the GitHub Actions workflow
 
-Before enabling automation, run a preview to see what the tool would do. No issues are modified, no labels are created.
+Add a workflow to your repo:
 
-The easiest way is to add the workflow first (see step 5) **without** `apply: true`, then trigger it manually from the Actions tab. The Action defaults to preview mode — it shows what would change without touching anything.
+```yaml
+# .github/workflows/label-sync.yml
+name: Sync Project Labels
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # every 15 minutes
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Apply changes (false = preview only)'
+        type: boolean
+        default: false
+      verbose:
+        description: 'Show per-issue detail'
+        type: boolean
+        default: false
 
-Or run it locally:
-
-```sh
-# Install
-go install github.com/dvhthomas/project-label-sync@latest
-
-# Preview (GH_TOKEN also works)
-project-label-sync --token ghp_... --config project-label-sync.yml
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dvhthomas/project-label-sync@v0.1.2
+        with:
+          token: ${{ secrets.PROJECT_PAT }}
+          apply: ${{ github.event.inputs.apply || 'false' }}
+          verbose: ${{ github.event.inputs.verbose || 'false' }}
 ```
 
-The output shows your configuration, which statuses are mapped and which are ignored, which labels exist or would be created, and a summary of what would change:
+The `actions/checkout` step is required so the config file is available.
+
+### 4. Preview
+
+Commit the config file and workflow, then go to the **Actions** tab and click **"Run workflow."** You'll see checkboxes for `apply` and `verbose` — leave both unchecked for a preview run.
+
+Check the log output. It shows your configuration, which statuses are mapped and which are ignored, which labels would be created, and a summary of what would change:
 
 ```
 Preview mode — showing what would change. Use --apply to update issues.
@@ -123,51 +146,14 @@ Summary:
   Errors: 0
 ```
 
-The "Unmapped" section makes it easy to spot gaps — statuses with no label mapping. If you intended to leave them out, no action needed. If you forgot one, add it to your config.
-
-Add `--verbose` to see the per-issue detail.
-
-### 4. Add the GitHub Actions workflow
-
-Add a workflow to your repo. Start **without** `apply` to preview:
-
-```yaml
-# .github/workflows/label-sync.yml
-name: Sync Project Labels
-on:
-  schedule:
-    - cron: '*/15 * * * *'   # every 15 minutes
-  workflow_dispatch:
-    inputs:
-      apply:
-        description: 'Apply changes (false = preview only)'
-        type: boolean
-        default: false
-      verbose:
-        description: 'Show per-issue detail'
-        type: boolean
-        default: false
-
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dvhthomas/project-label-sync@v0.1.2
-        with:
-          token: ${{ secrets.PROJECT_PAT }}
-          apply: ${{ github.event.inputs.apply || 'false' }}
-          verbose: ${{ github.event.inputs.verbose || 'false' }}
-```
-
-Commit this, then go to the Actions tab and click **"Run workflow."** You'll see dropdowns for `apply` and `verbose` — leave both unchecked for a preview run. Check the log output to see what would change. The `actions/checkout` step is required so the config file is available.
+The "Unmapped" section makes it easy to spot gaps. If you intended to leave them out, no action needed. If you forgot one, add it to your config. Check the `verbose` box and re-run to see per-issue detail.
 
 ### 5. Enable apply
 
 When the preview looks right, either:
 
-- **From the Actions UI:** Check the `apply` box and run again
-- **For scheduled runs:** Change the default to `true` so the cron job applies changes automatically:
+- **From the Actions UI:** Check the `apply` box and run the workflow again
+- **For scheduled runs:** Change the `apply` default to `true` so the cron job applies changes automatically:
 
 ```yaml
       apply:
@@ -176,11 +162,7 @@ When the preview looks right, either:
         default: true     # scheduled runs apply; manual runs still show the checkbox
 ```
 
-Or from the CLI:
-
-```sh
-project-label-sync --token ghp_... --config project-label-sync.yml --apply
-```
+Manual runs still show the checkbox, so you can always do a one-off preview by unchecking it.
 
 ## How conflicts are resolved
 
@@ -190,6 +172,25 @@ When the board says one thing and the labels say another, the tool compares time
 - **Label was added more recently** → board changes to match the label
 
 On first run, every issue gets labels from the board (there are no competing label timestamps yet).
+
+## Local CLI usage
+
+You can also run the tool locally without GitHub Actions:
+
+```sh
+go install github.com/dvhthomas/project-label-sync@latest
+
+# Preview
+project-label-sync --config project-label-sync.yml
+
+# Apply
+project-label-sync --config project-label-sync.yml --apply
+
+# Verbose
+project-label-sync --config project-label-sync.yml --verbose
+```
+
+The token is read from `--token` or the `GH_TOKEN` environment variable (e.g., from `gh auth token`).
 
 ## How it works under the hood
 

@@ -94,7 +94,7 @@ on:
       verbose:
         description: 'Show per-issue detail'
         type: boolean
-        default: false
+        default: true
 
 jobs:
   sync:

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	gh "github.com/dvhthomas/project-label-sync/github"
@@ -53,6 +54,18 @@ func (a ActionType) String() string {
 	}
 }
 
+// SyncStats tracks counts of each action during a sync run.
+type SyncStats struct {
+	Scanned       int
+	InSync        int
+	LabelsAdded   int
+	LabelsRemoved int
+	BoardUpdated  int
+	LabelsCreated int
+	Skipped       int
+	Errors        int
+}
+
 // Syncer holds the configuration and dependencies needed for reconciliation.
 type Syncer struct {
 	Project         *gh.ProjectInfo
@@ -65,9 +78,13 @@ type Syncer struct {
 	DryRun          bool
 	ProjectOwner    string
 	ProjectNumber   int
+	ProjectURL      string
 
 	// optionsByName maps status name -> option ID for board mutations.
 	optionsByName map[string]string
+
+	// Stats tracks action counts during Run().
+	Stats SyncStats
 }
 
 // NewSyncer creates a Syncer from the given project info, clients, and mapping.
@@ -102,28 +119,123 @@ func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManag
 	}
 }
 
+// logConfigSummary prints the configuration overview at the start of a run.
+func (s *Syncer) logConfigSummary() {
+	mode := "LIVE"
+	if s.DryRun {
+		mode = "DRY-RUN (no mutations will be performed)"
+	}
+
+	projectRef := s.Project.Title
+	if s.ProjectURL != "" {
+		projectRef = fmt.Sprintf("%s (%s)", s.Project.Title, s.ProjectURL)
+	}
+
+	var mappingLines []string
+	// Sort keys for deterministic output.
+	keys := make([]string, 0, len(s.Mapping))
+	for k := range s.Mapping {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		mappingLines = append(mappingLines, fmt.Sprintf("    %q → [%s]", k, strings.Join(s.Mapping[k], ", ")))
+	}
+
+	log.Printf("::notice::Configuration:\n  Project: %s\n  Field: %s\n  Mappings:\n%s\n  Mode: %s",
+		projectRef, s.FieldName, strings.Join(mappingLines, "\n"), mode)
+}
+
+// logLabelCheck reports which mapped labels exist on the repo and which are missing.
+func (s *Syncer) logLabelCheck(ctx context.Context, repos []string) {
+	for _, repo := range repos {
+		existing, missing, err := s.Labels.CheckLabelsExist(ctx, repo, s.AllMappedLabels)
+		if err != nil {
+			log.Printf("::warning::Label check on %s failed: %v", repo, err)
+			continue
+		}
+
+		var lines []string
+		for _, l := range existing {
+			lines = append(lines, fmt.Sprintf("  ✓ %s (exists)", l))
+		}
+		for _, l := range missing {
+			lines = append(lines, fmt.Sprintf("  ✗ %s (will be created)", l))
+		}
+		s.Stats.LabelsCreated = len(missing)
+
+		log.Printf("::notice::Label check on %s:\n%s", repo, strings.Join(lines, "\n"))
+	}
+}
+
+// logSummary prints a summary of all actions taken (or planned) during the run.
+func (s *Syncer) logSummary() {
+	verb := "Would add labels"
+	verbRemove := "Would remove labels"
+	verbBoard := "Would update board"
+	verbCreate := "Labels to create"
+	if !s.DryRun {
+		verb = "Labels added"
+		verbRemove = "Labels removed"
+		verbBoard = "Board updated"
+		verbCreate = "Labels created"
+	}
+
+	log.Printf("::notice::Summary:\n  Issues scanned: %d\n  Already in sync: %d\n  %s: %d issues\n  %s: %d issues\n  %s: %d issues\n  %s: %d\n  Skipped (unmapped/closed): %d\n  Errors: %d",
+		s.Stats.Scanned,
+		s.Stats.InSync,
+		verb, s.Stats.LabelsAdded,
+		verbRemove, s.Stats.LabelsRemoved,
+		verbBoard, s.Stats.BoardUpdated,
+		verbCreate, s.Stats.LabelsCreated,
+		s.Stats.Skipped,
+		s.Stats.Errors,
+	)
+}
+
 // Run fetches all project items via the Search API + batch GraphQL enrichment,
 // then reconciles each one.
 func (s *Syncer) Run(ctx context.Context) error {
+	// Log configuration summary.
+	s.logConfigSummary()
+
 	items, err := s.Client.FetchSyncData(ctx, s.Project.ID, s.ProjectOwner, s.ProjectNumber, s.FieldName, s.AllMappedLabels)
 	if err != nil {
 		return err
 	}
 
-	var (
-		synced       int
-		skipped      int
-		errors       int
-		labelChanges int
-		boardUpdates int
-		firstMut     = true
-	)
+	s.Stats.Scanned = len(items)
+
+	// Determine unique repos for label check.
+	repoSet := make(map[string]bool)
+	for _, item := range items {
+		repoSet[item.RepoRef()] = true
+	}
+	repos := make([]string, 0, len(repoSet))
+	for r := range repoSet {
+		repos = append(repos, r)
+	}
+	sort.Strings(repos)
+
+	// Pre-flight label check.
+	s.logLabelCheck(ctx, repos)
+
+	firstMut := true
+
+	// Track per-issue action types for summary counting.
+	issueAdds := make(map[int]bool)
+	issueRemoves := make(map[int]bool)
+	issueBoards := make(map[int]bool)
 
 	for _, item := range items {
 		actions := s.Reconcile(item)
 		for _, a := range actions {
 			if a.Type == ActionSkip || a.Type == ActionNone {
-				skipped++
+				if a.Detail != "" && strings.Contains(a.Detail, "in sync") {
+					s.Stats.InSync++
+				} else {
+					s.Stats.Skipped++
+				}
 				continue
 			}
 
@@ -133,32 +245,35 @@ func (s *Syncer) Run(ctx context.Context) error {
 			}
 			firstMut = false
 
-			synced++
-			if err := s.Execute(ctx, item, a); err != nil {
-				errors++
-				log.Printf("::error::Failed to execute %s on %s#%d: %v", a.Type, a.Repo, a.IssueNumber, err)
+			if execErr := s.Execute(ctx, item, a); execErr != nil {
+				s.Stats.Errors++
+				log.Printf("::error::Failed to execute %s on %s#%d: %v", a.Type, a.Repo, a.IssueNumber, execErr)
 			} else {
 				switch a.Type {
-				case ActionAddLabel, ActionRemoveLabel:
-					labelChanges++
+				case ActionAddLabel:
+					issueAdds[a.IssueNumber] = true
+				case ActionRemoveLabel:
+					issueRemoves[a.IssueNumber] = true
 				case ActionUpdateBoard:
-					boardUpdates++
+					issueBoards[a.IssueNumber] = true
 				}
 			}
 		}
 	}
 
-	log.Printf("::notice::Sync complete: %d items processed, %d actions taken, %d skipped, %d errors",
-		len(items), synced, skipped, errors)
+	s.Stats.LabelsAdded = len(issueAdds)
+	s.Stats.LabelsRemoved = len(issueRemoves)
+	s.Stats.BoardUpdated = len(issueBoards)
 
 	// Log API budget summary.
 	log.Printf("::notice::API budget: %d GraphQL points used, %d remaining",
 		s.Client.PointsUsed, s.Client.RateLimitRemaining())
-	log.Printf("::notice::Mutations: %d label changes, %d board updates",
-		labelChanges, boardUpdates)
 
-	if errors > 0 {
-		return fmt.Errorf("%d sync errors occurred", errors)
+	// Log final summary.
+	s.logSummary()
+
+	if s.Stats.Errors > 0 {
+		return fmt.Errorf("%d sync errors occurred", s.Stats.Errors)
 	}
 	return nil
 }

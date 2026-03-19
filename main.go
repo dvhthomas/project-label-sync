@@ -67,6 +67,7 @@ func run() error {
 	// Run sync.
 	labels := gh.NewLabelManager(client.HTTPClient, token, dryRun)
 	syncer := sync.NewSyncer(project, client, labels, cfg.Mapping, cfg.Field, dryRun, projectOwner, projectNumber)
+	syncer.ProjectURL = cfg.ProjectURL
 
 	return syncer.Run(ctx)
 }

@@ -179,6 +179,64 @@ func (m *LabelManager) RemoveLabel(ctx context.Context, repo string, issueNumber
 	})
 }
 
+// CheckLabelsExist checks which of the given labels already exist on the
+// repository and which are missing. Uses GET /repos/{owner}/{repo}/labels
+// with pagination.
+func (m *LabelManager) CheckLabelsExist(ctx context.Context, repo string, labels []string) (existing, missing []string, err error) {
+	repoLabels := make(map[string]bool)
+	page := 1
+	for {
+		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/labels?per_page=100&page=%d", repo, page)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+		if reqErr != nil {
+			return nil, nil, fmt.Errorf("create request: %w", reqErr)
+		}
+		req.Header.Set("Authorization", "Bearer "+m.Token)
+		req.Header.Set("Accept", "application/vnd.github+json")
+
+		resp, doErr := m.HTTPClient.Do(req)
+		if doErr != nil {
+			return nil, nil, fmt.Errorf("list labels: %w", doErr)
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, nil, fmt.Errorf("read response: %w", readErr)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("list labels on %s: HTTP %d: %s", repo, resp.StatusCode, string(body))
+		}
+
+		var pageLabels []struct {
+			Name string `json:"name"`
+		}
+		if jsonErr := json.Unmarshal(body, &pageLabels); jsonErr != nil {
+			return nil, nil, fmt.Errorf("unmarshal labels: %w", jsonErr)
+		}
+
+		for _, l := range pageLabels {
+			repoLabels[l.Name] = true
+		}
+
+		// If fewer than 100 results, we've reached the last page.
+		if len(pageLabels) < 100 {
+			break
+		}
+		page++
+	}
+
+	for _, l := range labels {
+		if repoLabels[l] {
+			existing = append(existing, l)
+		} else {
+			missing = append(missing, l)
+		}
+	}
+	return existing, missing, nil
+}
+
 // isRetryableStatus returns true for HTTP status codes that indicate
 // transient failures worth retrying.
 func isRetryableStatus(code int) bool {

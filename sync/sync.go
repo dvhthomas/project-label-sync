@@ -17,7 +17,7 @@ import (
 // triggering GitHub's secondary rate limits.
 const MutationDelay = 500 * time.Millisecond
 
-// Action describes a mutation that should (or would, in dry-run) be performed.
+// Action describes a mutation that should (or would, in preview mode) be performed.
 type Action struct {
 	Type        ActionType
 	IssueNumber int
@@ -123,7 +123,7 @@ func NewSyncer(project *gh.ProjectInfo, client *gh.Client, labels *gh.LabelManag
 func (s *Syncer) logConfigSummary() {
 	mode := "LIVE"
 	if s.DryRun {
-		mode = "DRY-RUN (no mutations will be performed)"
+		mode = "Preview (no mutations — pass apply: true to write changes)"
 	}
 
 	projectRef := s.Project.Title
@@ -419,7 +419,7 @@ func (s *Syncer) Execute(ctx context.Context, _ gh.ProjectItem, a Action) error 
 			return fmt.Errorf("no board option found for status %q", a.StatusName)
 		}
 		if s.DryRun {
-			log.Printf("[dry-run] Would update board status to %q for item %s", a.StatusName, a.ItemID)
+			log.Printf("[preview] Would update board status to %q for item %s", a.StatusName, a.ItemID)
 			return nil
 		}
 		return s.Client.UpdateItemStatus(ctx, s.Project.ID, a.ItemID, s.Project.FieldID, optionID)

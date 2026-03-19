@@ -25,7 +25,7 @@ func main() {
 func run() error {
 	token := getInput("TOKEN")
 	configPath := getInput("CONFIG")
-	dryRun := getInput("DRY-RUN") != "false"
+	apply := getInput("APPLY") == "true"
 
 	if token == "" {
 		return fmt.Errorf("input token is required")
@@ -39,10 +39,10 @@ func run() error {
 		return err
 	}
 
-	if dryRun {
-		log.Println("::notice::Running in DRY-RUN mode. No mutations will be performed.")
+	if apply {
+		log.Println("::notice::APPLY mode — changes will be written to GitHub.")
 	} else {
-		log.Println("::notice::Running in LIVE mode. Mutations will be applied.")
+		log.Println("::notice::Preview mode — showing what would change. Pass apply: true to write changes.")
 	}
 
 	// Parse project URL to extract owner and number for search queries.
@@ -65,8 +65,8 @@ func run() error {
 		project.Title, len(project.Options), cfg.Field, formatOptions(project.Options))
 
 	// Run sync.
-	labels := gh.NewLabelManager(client.HTTPClient, token, dryRun)
-	syncer := sync.NewSyncer(project, client, labels, cfg.Mapping, cfg.Field, dryRun, projectOwner, projectNumber)
+	labels := gh.NewLabelManager(client.HTTPClient, token, !apply)
+	syncer := sync.NewSyncer(project, client, labels, cfg.Mapping, cfg.Field, !apply, projectOwner, projectNumber)
 	syncer.ProjectURL = cfg.ProjectURL
 
 	return syncer.Run(ctx)

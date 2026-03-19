@@ -31,7 +31,7 @@ func NewLabelManager(httpClient *http.Client, token string, dryRun bool) *LabelM
 func (m *LabelManager) EnsureLabelExists(ctx context.Context, repo, labelName string) error {
 	return withRetry(ctx, "ensure-label-"+labelName, 3, func() error {
 		if m.DryRun {
-			log.Printf("[dry-run] Would ensure label %q exists on %s", labelName, repo)
+			log.Printf("[preview] Would ensure label %q exists on %s", labelName, repo)
 			return nil
 		}
 
@@ -88,7 +88,7 @@ func (m *LabelManager) EnsureLabelExists(ctx context.Context, repo, labelName st
 func (m *LabelManager) AddLabel(ctx context.Context, repo string, issueNumber int, labelName string) error {
 	return withRetry(ctx, "add-label-"+labelName, 3, func() error {
 		if m.DryRun {
-			log.Printf("[dry-run] Would add label %q to %s#%d", labelName, repo, issueNumber)
+			log.Printf("[preview] Would add label %q to %s#%d", labelName, repo, issueNumber)
 			return nil
 		}
 
@@ -138,7 +138,7 @@ func (m *LabelManager) AddLabel(ctx context.Context, repo string, issueNumber in
 func (m *LabelManager) RemoveLabel(ctx context.Context, repo string, issueNumber int, labelName string) error {
 	return withRetry(ctx, "remove-label-"+labelName, 3, func() error {
 		if m.DryRun {
-			log.Printf("[dry-run] Would remove label %q from %s#%d", labelName, repo, issueNumber)
+			log.Printf("[preview] Would remove label %q from %s#%d", labelName, repo, issueNumber)
 			return nil
 		}
 

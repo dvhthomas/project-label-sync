@@ -50,7 +50,7 @@ jobs:
       - uses: dvhthomas/project-label-sync@main
         with:
           token: ${{ secrets.PROJECT_PAT }}
-          dry-run: 'false'
+          apply: true
 ```
 
 The `actions/checkout` step is required so the config file is available in the workspace.
@@ -62,7 +62,7 @@ To use a non-default config path:
         with:
           token: ${{ secrets.PROJECT_PAT }}
           config: 'path/to/my-config.yml'
-          dry-run: 'false'
+          apply: true
 ```
 
 ## Inputs
@@ -71,7 +71,7 @@ To use a non-default config path:
 |-------|----------|---------|-------------|
 | `token` | Yes | | Classic PAT with `project` + `repo` scopes |
 | `config` | No | `.github/project-label-sync.yml` | Path to YAML config file |
-| `dry-run` | No | `true` | Log changes without applying them |
+| `apply` | No | `false` | Apply changes (create labels, sync issues). Without this, the Action only reports what would change. |
 
 ## Config file
 
@@ -124,9 +124,9 @@ The `GITHUB_TOKEN` provided by Actions **cannot** access GitHub Projects v2 data
 
 Store it as a repository secret (e.g., `PROJECT_PAT`).
 
-## Dry-run mode
+## Preview mode
 
-Dry-run is **enabled by default**. The Action will log every decision it would make without performing any mutations. Set `dry-run: 'false'` to enable live mode.
+Preview mode is the default. The Action shows what would change without making mutations. Pass `apply: true` to write changes.
 
 ## Limitations
 

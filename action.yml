@@ -11,10 +11,10 @@ inputs:
     description: 'Path to config file'
     required: false
     default: '.github/project-label-sync.yml'
-  dry-run:
-    description: 'Log what would change without making mutations'
+  apply:
+    description: 'Apply changes (create labels, sync issues). Without this, the Action only reports what would change.'
     required: false
-    default: 'true'
+    default: 'false'
 runs:
   using: 'docker'
   image: 'Dockerfile'

@@ -735,3 +735,41 @@ func TestReconcile_LabelsWithSpaces(t *testing.T) {
 		}
 	})
 }
+
+func TestLogConfigSummary_ShowsUnmappedStatuses(t *testing.T) {
+	project := &gh.ProjectInfo{
+		ID:      "PVT_test",
+		Title:   "Test Project",
+		FieldID: "PVTSSF_test",
+		Options: []gh.StatusOption{
+			{ID: "opt1", Name: "Backlog"},
+			{ID: "opt2", Name: "Ready"},
+			{ID: "opt3", Name: "In Progress"},
+			{ID: "opt4", Name: "QA"},
+			{ID: "opt5", Name: "Done"},
+		},
+	}
+
+	mapping := map[string][]string{
+		"In Progress": {"in-progress"},
+		"Done":        {"done"},
+	}
+
+	syncer, err := NewSyncer(project, nil, nil, nil, mapping, "Status", false, "owner", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify unmapped statuses are tracked
+	unmapped := syncer.UnmappedStatuses()
+	if len(unmapped) != 3 {
+		t.Fatalf("expected 3 unmapped statuses, got %d: %v", len(unmapped), unmapped)
+	}
+	// Should contain Backlog, Ready, QA but not In Progress or Done
+	want := map[string]bool{"Backlog": true, "Ready": true, "QA": true}
+	for _, s := range unmapped {
+		if !want[s] {
+			t.Errorf("unexpected unmapped status: %q", s)
+		}
+	}
+}

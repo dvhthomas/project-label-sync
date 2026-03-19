@@ -83,35 +83,39 @@ go install github.com/dvhthomas/project-label-sync@latest
 project-label-sync --token ghp_... --config project-label-sync.yml
 ```
 
-The output shows your configuration, which labels exist or would be created, and what would change on each issue:
+The output shows your configuration, which statuses are mapped and which are ignored, which labels exist or would be created, and a summary of what would change:
 
 ```
 Preview mode — showing what would change. Use --apply to update issues.
-Project: eBPF for Windows Triage (3 Status options: Todo, In Progress, Done)
+Project: CalcMark Tracker (5 Status options: Backlog, Ready, In progress, In review, Done)
 Configuration:
-  Project: eBPF for Windows Triage (https://github.com/orgs/microsoft/projects/2098)
+  Project: CalcMark Tracker (https://github.com/orgs/CalcMark/projects/1)
   Field: Status
   Mappings:
     "Done" → [done]
-    "In Progress" → [in-progress]
-    "Todo" → [todo]
+    "In progress" → [in-progress]
+  Unmapped:
+    "Backlog" — no labels (ignored)
+    "Ready" — no labels (ignored)
+    "In review" — no labels (ignored)
   Mode: Preview (no changes made — use --apply to update issues)
 
-Label check on microsoft/ebpf-for-windows:
+Label check on CalcMark/go-calcmark:
   ✗ done (will be created)
   ✗ in-progress (will be created)
-  ✗ todo (will be created)
 
 Summary:
-  Issues scanned: 98
+  Issues scanned: 1
   Already in sync: 0
-  Would add labels: 98 issues
+  Would add labels: 0 issues
   Would remove labels: 0 issues
   Would update board: 0 issues
-  Labels to create: 3
-  Skipped (unmapped/closed): 0
+  Labels to create: 2
+  Skipped (unmapped/closed): 1
   Errors: 0
 ```
+
+The "Unmapped" section makes it easy to spot gaps — statuses with no label mapping. If you intended to leave them out, no action needed. If you forgot one, add it to your config.
 
 Add `--verbose` to see the per-issue detail.
 

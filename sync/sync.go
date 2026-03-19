@@ -164,8 +164,30 @@ func (s *Syncer) logConfigSummary() {
 		mappingLines = append(mappingLines, fmt.Sprintf("    %q → [%s]", k, strings.Join(s.Mapping[k], ", ")))
 	}
 
-	applog.Notice("Configuration:\n  Project: %s\n  Field: %s\n  Mappings:\n%s\n  Mode: %s",
-		projectRef, s.FieldName, strings.Join(mappingLines, "\n"), mode)
+	// Show unmapped statuses so the user can spot gaps.
+	unmapped := s.UnmappedStatuses()
+	var unmappedLines string
+	if len(unmapped) > 0 {
+		var items []string
+		for _, name := range unmapped {
+			items = append(items, fmt.Sprintf("    %q — no labels (ignored)", name))
+		}
+		unmappedLines = "\n  Unmapped:\n" + strings.Join(items, "\n")
+	}
+
+	applog.Notice("Configuration:\n  Project: %s\n  Field: %s\n  Mappings:\n%s%s\n  Mode: %s",
+		projectRef, s.FieldName, strings.Join(mappingLines, "\n"), unmappedLines, mode)
+}
+
+// UnmappedStatuses returns project field options that have no mapping entry.
+func (s *Syncer) UnmappedStatuses() []string {
+	var unmapped []string
+	for _, opt := range s.Project.Options {
+		if _, ok := s.Mapping[opt.Name]; !ok {
+			unmapped = append(unmapped, opt.Name)
+		}
+	}
+	return unmapped
 }
 
 // logLabelCheck reports which mapped labels exist on the repo and which are missing.
@@ -237,12 +259,7 @@ func (s *Syncer) validateMapping() error {
 		}
 	}
 
-	// Warn about unmapped options (informational, not an error).
-	for _, opt := range s.Project.Options {
-		if _, mapped := s.Mapping[opt.Name]; !mapped {
-			warnings = append(warnings, fmt.Sprintf("project status %q is not mapped (will be ignored)", opt.Name))
-		}
-	}
+	// Unmapped statuses are shown in the config summary, not as individual warnings.
 
 	for _, w := range warnings {
 		applog.Warn("%s", w)

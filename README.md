@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dvhthomas/project-label-sync@v0.1.1
+      - uses: dvhthomas/project-label-sync@v0.1.2
         with:
           token: ${{ secrets.PROJECT_PAT }}
           apply: true

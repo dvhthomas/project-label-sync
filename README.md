@@ -43,7 +43,7 @@ mapping:
 Each key under `mapping` must exactly match a value in your project's Status field (case-sensitive).
 
 > [!TIP]
-> You don't have to map every status. Statuses you leave out are simply ignored. If your board has "Backlog", "Triage", and "In Progress" but you only care about labeling active work, just map "In Progress" and leave the rest out.
+> You don't have to map every status. Maybe you don't want to tag anything in "Backlog" with an issue label — just leave it out of the config and it will be quietly ignored. If your board has "Backlog", "Triage", and "In Progress" but you only care about labeling active work, just map "In Progress" and leave the rest out. The preview output shows which statuses are unmapped so you can verify nothing was forgotten.
 
 The `field` defaults to `Status` but can be any single-select field on your project. For example, the [GitHub Public Roadmap](https://github.com/orgs/github/projects/4247) uses a `Release Phase` field:
 

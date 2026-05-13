@@ -63,17 +63,24 @@ A status can map to multiple labels. When you drag an issue into that column, **
 
 ### 2. Create a personal access token
 
-The GitHub Actions `GITHUB_TOKEN` cannot access project board data. You need a **classic** personal access token with `project` and `repo` scopes.
+The GitHub Actions `GITHUB_TOKEN` cannot access project board data. You need a **classic** personal access token. Fine-grained tokens do not support the Projects v2 GraphQL API.
 
-Create one here: https://github.com/settings/tokens/new?scopes=project,repo&description=project-label-sync
+Two scopes:
 
-Add it as a repository secret named `PROJECT_PAT`.
+- **`project`** — Full control of projects. Required for reading and updating the board's Status field. Checking the parent box auto-includes `read:project`.
+- **One of `repo` or `public_repo`** — required to read and write issue labels. *There is no separate "labels" scope in classic PATs; labels are managed under `repo`.*
+  - **`public_repo`** if every repo on your board is public. Least privilege.
+  - **`repo` (parent)** if any repo is private, or if the board may add private repos later.
+
+Pre-filled token-creation links:
+
+- Public boards only — `project` + `public_repo`: https://github.com/settings/tokens/new?scopes=project,public_repo&description=project-label-sync
+- Mixed or private — `project` + `repo`: https://github.com/settings/tokens/new?scopes=project,repo&description=project-label-sync
+
+Add the token as a repository secret named `PROJECT_PAT`.
 
 > [!IMPORTANT]
-> The token owner must have **write access to every repo** that has issues on the project board. Org-level project boards often span multiple repos — for example, an issue from `myorg/frontend` and another from `myorg/api` on the same board. The `repo` scope on the PAT grants access to all repos the user can access, but the user must actually be a collaborator or team member on each repo. If the token can't write to a particular repo, label sync will fail for issues in that repo (other repos still sync normally).
-
-> [!NOTE]
-> Fine-grained PATs do not support the Projects v2 GraphQL API. You must use a classic token.
+> The token owner must have **write access to every repo** with issues on the project board. Org-level boards often span multiple repos — for example, an issue from `myorg/frontend` and another from `myorg/api` on the same board. The `repo` / `public_repo` scope doesn't grant new repo access; it inherits whatever the token owner already has. If the token can't write to a particular repo, label sync fails for that repo only (others continue to sync normally).
 
 ### 3. Add the GitHub Actions workflow
 
